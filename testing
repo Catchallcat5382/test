@@ -448,6 +448,9 @@ local function startInvis()
 		end
 	end
 
+	local invisKeyConn
+	local invisConn
+
 	invisConn = _reg(RunService.Heartbeat:Connect(function()
 
 		if not invisEnabled then return end
@@ -490,14 +493,25 @@ local function stopInvis()
 	invisEnabled = false
 
 	if invisConn then
-		invisConn:Disconnect()
+		pcall(function()
+			invisConn:Disconnect()
+		end)
 		invisConn = nil
 	end
 
-	restoreTransparency()
+	for v,t in pairs(invisSaved) do
+		if v and v.Parent then
+			if v:IsA("BasePart") then
+				v.LocalTransparencyModifier = t
+			elseif v:IsA("Decal") then
+				v.Transparency = t
+			end
+		end
+	end
+
+	table.clear(invisSaved)
 
 end
-
 
 local function toggleInvis()
 
@@ -1280,7 +1294,15 @@ end)
 
 CloseBtn.MouseButton1Click:Connect(function()
 
-	stopInvis()
+	pcall(function()
+		stopInvis()
+	end)
+
+	if invisKeyConn then
+		pcall(function()
+			invisKeyConn:Disconnect()
+		end)
+	end
 
 	stopFly()
 	stopAntiFling()
