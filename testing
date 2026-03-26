@@ -38,9 +38,9 @@ end
 local _allConns = {}
 local function _reg(c) _allConns[#_allConns+1] = c; return c end
 local function _killAll()
-	SCRIPT_CLOSED = true
-	for _, c in ipairs(_allConns) do pcall(function() c:Disconnect() end) end
-	_allConns = {}
+    SCRIPT_CLOSED = true
+    for _, c in ipairs(_allConns) do pcall(function() c:Disconnect() end) end
+    _allConns = {}
 end
 
 pcall(function() CoreGui:FindFirstChild("CatExplorerGUI"):Destroy() end)
@@ -1260,8 +1260,9 @@ CloseBtn.MouseButton1Click:Connect(function()
     stopFly()
     StopFloat()
     
-    _killAll()
-    
+    _killAll() -- only disconnects runtime connections
+
+    -- destroy UI separately
     ScreenGui:Destroy()
 end)
 
