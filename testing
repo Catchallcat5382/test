@@ -1,0 +1,1363 @@
+-- =========================================================
+-- Cat's Explorer -- ULTIMATE BUILD v2 + AI Chat Tab
+-- Anti-Fling | Polished UI | +Scripts Tab | +AI Tab
+-- Working key hide | Tutorial | Transcripts | Invisibility
+-- =========================================================
+
+local Players            = game:GetService("Players")
+local LocalPlayer        = Players.LocalPlayer
+local CoreGui            = game:GetService("CoreGui")
+local TweenService       = game:GetService("TweenService")
+local UserInputService   = game:GetService("UserInputService")
+local RunService         = game:GetService("RunService")
+local TeleportService    = game:GetService("TeleportService")
+local HttpService        = game:GetService("HttpService")
+
+local FLY_TOGGLE_KEY = Enum.KeyCode.Z
+local SCRIPT_CLOSED  = false
+
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local HRP       = Character:WaitForChild("HumanoidRootPart")
+local Humanoid  = Character:WaitForChild("Humanoid")
+local Camera    = workspace.CurrentCamera
+
+local Step               = 0.25
+local MinDistanceBelowSurface = 5
+
+local FloatPart  = nil
+local FloatEnabled = false
+local LockedY    = nil
+local HoldingE   = false
+local HoldingQ   = false
+
+local function isTyping()
+	return UserInputService:GetFocusedTextBox() ~= nil
+end
+
+-- ── SHUTDOWN SYSTEM ───────────────────────────────────────
+local _allConns = {}
+local function _reg(c) _allConns[#_allConns+1] = c; return c end
+local function _killAll()
+	SCRIPT_CLOSED = true
+	for _, c in ipairs(_allConns) do pcall(function() c:Disconnect() end) end
+	_allConns = {}
+end
+
+pcall(function() CoreGui:FindFirstChild("CatExplorerGUI"):Destroy() end)
+
+local ScreenGui          = Instance.new("ScreenGui", CoreGui)
+ScreenGui.Name           = "CatExplorerGUI"
+ScreenGui.ResetOnSpawn   = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+-- =========================================================
+-- SOUNDS
+-- =========================================================
+local function mkSound(id, vol)
+	local s = Instance.new("Sound", ScreenGui); s.SoundId = id; s.Volume = vol; return s
+end
+local TypingSound   = mkSound("rbxassetid://133003979061644", 0.5)
+local MinimizeSound = mkSound("rbxassetid://131639624315532", 0.8)
+local NotifSound    = mkSound("rbxassetid://133003979061644", 0.6)
+local function play(s) if s.IsPlaying then s:Stop() end; s:Play() end
+
+-- =========================================================
+-- THEME
+-- =========================================================
+local C = {
+	BG=Color3.fromRGB(14,14,18), BG2=Color3.fromRGB(22,22,28),
+	BG3=Color3.fromRGB(32,32,40), ACCENT=Color3.fromRGB(130,80,255),
+	ACCENT2=Color3.fromRGB(90,50,200), DANGER=Color3.fromRGB(200,45,45),
+	SUCCESS=Color3.fromRGB(50,200,110), WARNING=Color3.fromRGB(220,150,30),
+	TEXT=Color3.fromRGB(230,230,235), SUBTEXT=Color3.fromRGB(140,140,155),
+	BORDER=Color3.fromRGB(55,55,70), WHITE=Color3.new(1,1,1),
+	YELLOW=Color3.fromRGB(255,200,50),
+}
+
+local function corner(p,r) local c=Instance.new("UICorner",p); c.CornerRadius=UDim.new(0,r or 8); return c end
+local function stroke(p,col,thick)
+	local s=Instance.new("UIStroke",p); s.Color=col or C.BORDER; s.Thickness=thick or 1
+	s.ApplyStrokeMode=Enum.ApplyStrokeMode.Border; return s
+end
+local function pad(p,t,b,l,r)
+	local u=Instance.new("UIPadding",p)
+	u.PaddingTop=UDim.new(0,t or 0); u.PaddingBottom=UDim.new(0,b or 0)
+	u.PaddingLeft=UDim.new(0,l or 0); u.PaddingRight=UDim.new(0,r or 0)
+end
+local function tw(o,pr,dur,ease) TweenService:Create(o,TweenInfo.new(dur or 0.18,ease or Enum.EasingStyle.Quad),pr):Play() end
+local function hoverFX(btn,normal,hover)
+	btn.MouseEnter:Connect(function() tw(btn,{BackgroundColor3=hover}) end)
+	btn.MouseLeave:Connect(function() tw(btn,{BackgroundColor3=normal}) end)
+end
+
+-- =========================================================
+-- MAIN FRAME
+-- =========================================================
+local MainFrame = Instance.new("Frame", ScreenGui)
+MainFrame.Size=UDim2.fromOffset(340,480); MainFrame.Position=UDim2.fromScale(0.62,0.18)
+MainFrame.BackgroundColor3=C.BG; MainFrame.Active=true; MainFrame.Draggable=true
+MainFrame.ClipsDescendants=false; corner(MainFrame,12); stroke(MainFrame,C.BORDER,1)
+
+local TopBar=Instance.new("Frame",MainFrame); TopBar.Size=UDim2.new(1,0,0,3)
+TopBar.BackgroundColor3=C.ACCENT; TopBar.ZIndex=5; corner(TopBar,2)
+Instance.new("UIGradient",TopBar).Color=ColorSequence.new{
+	ColorSequenceKeypoint.new(0,C.ACCENT), ColorSequenceKeypoint.new(1,C.ACCENT2)}
+
+-- =========================================================
+-- HEADER
+-- =========================================================
+local Header=Instance.new("Frame",MainFrame); Header.Size=UDim2.new(1,0,0,44)
+Header.Position=UDim2.fromOffset(0,3); Header.BackgroundTransparency=1; pad(Header,0,0,14,10)
+
+local TitleLabel=Instance.new("TextLabel",Header); TitleLabel.Size=UDim2.new(1,-85,1,0)
+TitleLabel.BackgroundTransparency=1; TitleLabel.Text="* Cat's Explorer"
+TitleLabel.Font=Enum.Font.GothamBold; TitleLabel.TextSize=16; TitleLabel.TextColor3=C.WHITE
+TitleLabel.TextXAlignment=Enum.TextXAlignment.Left
+
+local SubLabel=Instance.new("TextLabel",Header); SubLabel.Size=UDim2.new(1,-85,0,12)
+SubLabel.Position=UDim2.new(0,0,1,-14); SubLabel.BackgroundTransparency=1
+SubLabel.Text="v2 - Z to fly - RShift to hide"; SubLabel.Font=Enum.Font.Gotham
+SubLabel.TextSize=10; SubLabel.TextColor3=C.SUBTEXT; SubLabel.TextXAlignment=Enum.TextXAlignment.Left
+
+local BtnHolder=Instance.new("Frame",Header); BtnHolder.Size=UDim2.fromOffset(72,28)
+BtnHolder.Position=UDim2.new(1,-82,0.5,-14); BtnHolder.BackgroundTransparency=1
+local BLL=Instance.new("UIListLayout",BtnHolder); BLL.FillDirection=Enum.FillDirection.Horizontal
+BLL.Padding=UDim.new(0,5); BLL.VerticalAlignment=Enum.VerticalAlignment.Center
+
+local function mkHdrBtn(txt,bg)
+	local b=Instance.new("TextButton",BtnHolder); b.Size=UDim2.fromOffset(32,28); b.Text=txt
+	b.Font=Enum.Font.GothamBold; b.TextSize=14; b.BackgroundColor3=bg
+	b.TextColor3=C.WHITE; b.AutoButtonColor=false; corner(b,6); return b
+end
+local MinimizeBtn=mkHdrBtn("-",C.BG3); local CloseBtn=mkHdrBtn("X",C.DANGER)
+hoverFX(MinimizeBtn,C.BG3,Color3.fromRGB(55,55,70)); hoverFX(CloseBtn,C.DANGER,Color3.fromRGB(230,60,60))
+
+local Divider=Instance.new("Frame",MainFrame); Divider.Size=UDim2.new(1,-28,0,1)
+Divider.Position=UDim2.fromOffset(14,47); Divider.BackgroundColor3=C.BORDER
+
+-- =========================================================
+-- TABS
+-- =========================================================
+local TabBar=Instance.new("Frame",MainFrame); TabBar.Position=UDim2.fromOffset(12,54)
+TabBar.Size=UDim2.new(1,-24,0,32); TabBar.BackgroundColor3=C.BG2; TabBar.ClipsDescendants=true
+corner(TabBar,8); stroke(TabBar,C.BORDER,1)
+
+local TAB_COUNT=5; local TAB_W=1/TAB_COUNT
+local TabIndicator=Instance.new("Frame",TabBar); TabIndicator.Size=UDim2.new(TAB_W,0,0,2)
+TabIndicator.Position=UDim2.new(0,0,1,-2); TabIndicator.BackgroundColor3=C.ACCENT; corner(TabIndicator,2)
+
+local function setActiveTab(btn,x)
+	for _,t in ipairs(TabBar:GetChildren()) do if t:IsA("TextButton") then t.TextColor3=C.SUBTEXT end end
+	btn.TextColor3=C.WHITE; tw(TabIndicator,{Position=UDim2.new(x,0,1,-2)},0.18,Enum.EasingStyle.Quad)
+end
+local function mkTab(txt,xPos)
+	local b=Instance.new("TextButton",TabBar); b.Size=UDim2.new(TAB_W,0,1,0)
+	b.Position=UDim2.new(xPos,0,0,0); b.Text=txt; b.Font=Enum.Font.GothamSemibold; b.TextSize=10
+	b.BackgroundColor3=Color3.new(0,0,0); b.BackgroundTransparency=1; b.TextColor3=C.SUBTEXT
+	b.AutoButtonColor=false; return b
+end
+local TeleportTab=mkTab(">> TP",0*TAB_W); local FlyTab=mkTab("^ Fly",1*TAB_W)
+local MiscTab=mkTab("* Misc",2*TAB_W); local ScriptsTab=mkTab("> Scripts",3*TAB_W)
+local AITab=mkTab("@ AI Chat",4*TAB_W)
+
+-- =========================================================
+-- PAGES
+-- =========================================================
+local function newPage()
+	local f=Instance.new("Frame",MainFrame); f.Position=UDim2.fromOffset(12,94)
+	f.Size=UDim2.new(1,-24,1,-104); f.BackgroundTransparency=1; f.ClipsDescendants=true; return f
+end
+local TeleportFrame=newPage(); local FlyFrame=newPage(); FlyFrame.Visible=false
+local MiscFrame=newPage(); MiscFrame.Visible=false; local ScriptsFrame=newPage(); ScriptsFrame.Visible=false
+
+local AIFrame=Instance.new("ScrollingFrame",MainFrame)
+AIFrame.Position=UDim2.fromOffset(12,94); AIFrame.Size=UDim2.new(1,-24,1,-104)
+AIFrame.BackgroundTransparency=1; AIFrame.BorderSizePixel=0; AIFrame.ScrollBarThickness=4
+AIFrame.ScrollBarImageColor3=C.ACCENT; AIFrame.CanvasSize=UDim2.new(0,0,0,0)
+AIFrame.AutomaticCanvasSize=Enum.AutomaticSize.Y; AIFrame.ClipsDescendants=true; AIFrame.Visible=false
+local aiFramePad=Instance.new("UIPadding",AIFrame); aiFramePad.PaddingBottom=UDim.new(0,8)
+
+-- =========================================================
+-- SHARED BUTTON FACTORY
+-- =========================================================
+local function mkBtn(parent,txt,y,col,h)
+	local b=Instance.new("TextButton",parent); b.Size=UDim2.new(1,0,0,36)
+	b.Position=UDim2.fromOffset(0,y or 0); b.Text=txt; b.Font=Enum.Font.GothamSemibold; b.TextSize=13
+	b.BackgroundColor3=col or C.BG3; b.TextColor3=C.WHITE; b.AutoButtonColor=false
+	corner(b,8); stroke(b,C.BORDER,1); hoverFX(b,col or C.BG3,h or Color3.fromRGB(45,45,58)); return b
+end
+
+-- =========================================================
+-- TELEPORT PAGE
+-- =========================================================
+local SearchBox=Instance.new("TextBox",TeleportFrame); SearchBox.Size=UDim2.new(1,0,0,34)
+SearchBox.PlaceholderText="[?] Search player..."; SearchBox.BackgroundColor3=C.BG2
+SearchBox.TextColor3=C.TEXT; SearchBox.PlaceholderColor3=C.SUBTEXT; SearchBox.Font=Enum.Font.Gotham
+SearchBox.TextSize=13; SearchBox.ClearTextOnFocus=false; SearchBox.TextXAlignment=Enum.TextXAlignment.Left
+corner(SearchBox,8); stroke(SearchBox,C.BORDER,1); pad(SearchBox,0,0,10,8)
+SearchBox:GetPropertyChangedSignal("Text"):Connect(function() play(TypingSound) end)
+
+local Scroll=Instance.new("ScrollingFrame",TeleportFrame); Scroll.Position=UDim2.fromOffset(0,42)
+Scroll.Size=UDim2.new(1,0,1,-120); Scroll.BackgroundTransparency=1
+Scroll.ScrollBarThickness=3; Scroll.ScrollBarImageColor3=C.ACCENT; Scroll.BorderSizePixel=0
+local Layout=Instance.new("UIListLayout",Scroll); Layout.Padding=UDim.new(0,4)
+
+local loopTarget,looping=nil,false; local orbitTarget,orbiting=nil,false
+local orbitAngle,orbitRadius,orbitSpeed=0,6,2
+
+local function instantGoto(player)
+	local char=LocalPlayer.Character; local targetChar=player and player.Character
+	if not(char and targetChar) then return end
+	local myHRP=char:FindFirstChild("HumanoidRootPart"); local targetHRP=targetChar:FindFirstChild("HumanoidRootPart")
+	if not(myHRP and targetHRP) then return end
+	myHRP.CFrame=CFrame.new(targetHRP.Position-targetHRP.CFrame.LookVector*2+Vector3.new(0,0.1,0),targetHRP.Position)
+	myHRP.AssemblyLinearVelocity=Vector3.zero
+end
+local function softFollow(player)
+	local char=LocalPlayer.Character; local targetChar=player and player.Character
+	if not(char and targetChar) then return end
+	local myHRP=char:FindFirstChild("HumanoidRootPart"); local hum=char:FindFirstChildOfClass("Humanoid")
+	local tarHRP=targetChar:FindFirstChild("HumanoidRootPart")
+	if not(myHRP and hum and tarHRP) then return end
+	if hum.Sit then hum.Sit=false end
+	local desiredPos=tarHRP.Position-tarHRP.CFrame.LookVector*2+Vector3.new(0,0.1,0)
+	local delta=desiredPos-myHRP.Position; local dist=delta.Magnitude
+	if dist>12 then myHRP.CFrame=CFrame.new(desiredPos,tarHRP.Position); myHRP.AssemblyLinearVelocity=Vector3.zero; return end
+	myHRP.AssemblyLinearVelocity=delta.Unit*math.min(dist*12,40)
+end
+_reg(RunService.Heartbeat:Connect(function(dt)
+	if looping and loopTarget then softFollow(loopTarget) end
+	if orbiting and orbitTarget and orbitTarget.Character then
+		local hrp=orbitTarget.Character:FindFirstChild("HumanoidRootPart")
+		local my=LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+		if hrp and my then
+			orbitAngle+=dt*orbitSpeed
+			my.CFrame=CFrame.new(hrp.Position+Vector3.new(math.cos(orbitAngle)*orbitRadius,2,math.sin(orbitAngle)*orbitRadius),hrp.Position)
+		end
+	end
+end))
+
+local OrbitBtn=mkBtn(TeleportFrame,"[O] Orbit Player",nil,C.BG3); OrbitBtn.Position=UDim2.new(0,0,1,-78)
+local LoopBtn=mkBtn(TeleportFrame,"[>>] Loop Goto",nil,C.BG3); LoopBtn.Position=UDim2.new(0,0,1,-38)
+OrbitBtn.MouseButton1Click:Connect(function()
+	orbiting=not orbiting; OrbitBtn.Text=orbiting and "[S] Stop Orbit" or "[O] Orbit Player"
+	OrbitBtn.BackgroundColor3=orbiting and C.ACCENT2 or C.BG3
+end)
+LoopBtn.MouseButton1Click:Connect(function()
+	looping=not looping; if looping and loopTarget then instantGoto(loopTarget) end
+	LoopBtn.Text=looping and "[S] Stop Loop" or "[>>] Loop Goto"; LoopBtn.BackgroundColor3=looping and C.ACCENT2 or C.BG3
+end)
+
+local function refreshPlayers()
+	for _,v in ipairs(Scroll:GetChildren()) do if v:IsA("TextButton") then v:Destroy() end end
+	local q=SearchBox.Text:lower()
+	for _,p in ipairs(Players:GetPlayers()) do
+		if p~=LocalPlayer and p.Name:lower():find(q,1,true) then
+			local b=Instance.new("TextButton",Scroll); b.Size=UDim2.new(1,0,0,32); b.Text="  "..p.Name
+			b.Font=Enum.Font.Gotham; b.TextSize=13; b.BackgroundColor3=C.BG2; b.TextColor3=C.TEXT
+			b.TextXAlignment=Enum.TextXAlignment.Left; b.AutoButtonColor=false
+			corner(b,7); stroke(b,C.BORDER,1); hoverFX(b,C.BG2,C.BG3)
+			b.MouseButton1Click:Connect(function() instantGoto(p); loopTarget=p; orbitTarget=p end)
+		end
+	end
+	Scroll.CanvasSize=UDim2.fromOffset(0,Layout.AbsoluteContentSize.Y+4)
+end
+_reg(SearchBox:GetPropertyChangedSignal("Text"):Connect(refreshPlayers))
+_reg(Players.PlayerAdded:Connect(refreshPlayers)); _reg(Players.PlayerRemoving:Connect(refreshPlayers)); refreshPlayers()
+
+-- =========================================================
+-- FLY PAGE
+-- =========================================================
+local flying,flyConn=false,nil; local bv,bg; local flySpeed,accel=40,6; local currentVel=Vector3.zero
+
+local function stopFly()
+	flying=false; if flyConn then flyConn:Disconnect(); flyConn=nil end
+	if bv then bv:Destroy(); bv=nil end; if bg then bg:Destroy(); bg=nil end
+	currentVel=Vector3.zero
+	local hum=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+	if hum then hum.PlatformStand=false end
+end
+local function startFly()
+	if flying or SCRIPT_CLOSED then return end
+	local char=LocalPlayer.Character; local hrp=char and char:FindFirstChild("HumanoidRootPart")
+	local hum=char and char:FindFirstChildOfClass("Humanoid")
+	if not(char and hrp and hum) then return end
+	flying=true; hum.PlatformStand=true
+	bv=Instance.new("BodyVelocity",hrp); bv.MaxForce=Vector3.new(1e5,1e5,1e5)
+	bg=Instance.new("BodyGyro",hrp); bg.MaxTorque=Vector3.new(1e5,1e5,1e5); bg.P=9000
+	flyConn=_reg(RunService.RenderStepped:Connect(function(dt)
+		if isTyping() then currentVel=Vector3.zero; bv.Velocity=Vector3.zero; return end
+		local cam=workspace.CurrentCamera; local moveDir=Vector3.zero
+		if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir+=cam.CFrame.LookVector end
+		if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir-=cam.CFrame.LookVector end
+		if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir-=cam.CFrame.RightVector end
+		if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir+=cam.CFrame.RightVector end
+		if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDir+=Vector3.yAxis end
+		if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then moveDir-=Vector3.yAxis end
+		if moveDir.Magnitude>0 then moveDir=moveDir.Unit*flySpeed end
+		currentVel=currentVel:Lerp(moveDir,math.clamp(dt*accel,0,1))
+		bv.Velocity=currentVel; bg.CFrame=CFrame.new(hrp.Position,hrp.Position+cam.CFrame.LookVector)
+	end))
+end
+_reg(LocalPlayer.CharacterAdded:Connect(stopFly))
+
+-- =========================================================
+-- FLOAT SYSTEM
+-- =========================================================
+local function UpdateFloat()
+	if not FloatEnabled or not HRP or not FloatPart then return end
+	if HoldingE then LockedY = LockedY + Step
+	elseif HoldingQ then LockedY = LockedY - Step end
+	local downRay = workspace:Raycast(HRP.Position, Vector3.new(0,-100,0))
+	if downRay then
+		local floorY = downRay.Position.Y
+		if LockedY < floorY - MinDistanceBelowSurface then LockedY = floorY - MinDistanceBelowSurface end
+	end
+	local upRay = workspace:Raycast(HRP.Position, Vector3.new(0,100,0))
+	if upRay then
+		local ceilingBuffer = 2
+		if LockedY + FloatPart.Size.Y/2 > upRay.Position.Y - ceilingBuffer then
+			LockedY = upRay.Position.Y - ceilingBuffer - FloatPart.Size.Y/2
+		end
+	end
+	FloatPart.Position = Vector3.new(HRP.Position.X, LockedY, HRP.Position.Z)
+end
+
+local function StartFloat()
+	if FloatEnabled then return end
+	FloatEnabled = true
+	if not FloatPart then
+		FloatPart = Instance.new("Part")
+		FloatPart.Size = Vector3.new(6,1,6)
+		FloatPart.Anchored = true
+		FloatPart.CanCollide = true
+		FloatPart.Transparency = 1
+		FloatPart.Color = Color3.fromRGB(255,0,0)
+		FloatPart.Name = "ClientFloat"
+		FloatPart.Parent = workspace
+	end
+	LockedY = HRP.Position.Y - 3
+end
+
+local function StopFloat()
+	FloatEnabled = false
+	if FloatPart then FloatPart:Destroy(); FloatPart = nil end
+end
+
+RunService.RenderStepped:Connect(UpdateFloat)
+
+_reg(LocalPlayer.CharacterAdded:Connect(function(char)
+	Character = char
+	HRP = char:WaitForChild("HumanoidRootPart")
+	Humanoid = char:WaitForChild("Humanoid")
+	if FloatEnabled then LockedY = HRP.Position.Y - 3 end
+end))
+
+_reg(UserInputService.InputBegan:Connect(function(input, gpe)
+	if gpe or not FloatEnabled then return end
+	if input.KeyCode == Enum.KeyCode.E then HoldingE = true
+	elseif input.KeyCode == Enum.KeyCode.Q then HoldingQ = true end
+end))
+_reg(UserInputService.InputEnded:Connect(function(input)
+	if input.KeyCode == Enum.KeyCode.E then HoldingE = false
+	elseif input.KeyCode == Enum.KeyCode.Q then HoldingQ = false end
+end))
+
+local FlyBtn=mkBtn(FlyFrame,"[^] Start Flying",0,C.BG3); FlyBtn.Size=UDim2.new(1,0,0,44)
+FlyBtn.MouseButton1Click:Connect(function()
+	if flying then stopFly(); FlyBtn.Text="[^] Start Flying"; FlyBtn.BackgroundColor3=C.BG3
+	else startFly(); FlyBtn.Text="[S] Stop Flying"; FlyBtn.BackgroundColor3=C.ACCENT2 end
+end)
+
+local function mkLabel(p,txt,y)
+	local l=Instance.new("TextLabel",p); l.Size=UDim2.new(1,0,0,18); l.Position=UDim2.fromOffset(0,y)
+	l.BackgroundTransparency=1; l.Text=txt; l.Font=Enum.Font.GothamSemibold; l.TextSize=11
+	l.TextColor3=C.SUBTEXT; l.TextXAlignment=Enum.TextXAlignment.Left; return l
+end
+local function mkInput(p,val,y)
+	local b=Instance.new("TextBox",p); b.Size=UDim2.new(1,0,0,32); b.Position=UDim2.fromOffset(0,y)
+	b.Text=tostring(val); b.BackgroundColor3=C.BG2; b.TextColor3=C.TEXT; b.Font=Enum.Font.Gotham; b.TextSize=13
+	corner(b,8); stroke(b,C.BORDER,1); pad(b,0,0,10,8); return b
+end
+mkLabel(FlyFrame,"FLY SPEED",54); local SpeedBox=mkInput(FlyFrame,flySpeed,72)
+mkLabel(FlyFrame,"ACCELERATION",114); local AccelBox=mkInput(FlyFrame,accel,132)
+SpeedBox.FocusLost:Connect(function() local n=tonumber(SpeedBox.Text); if n then flySpeed=math.clamp(n,5,500) end; SpeedBox.Text=tostring(flySpeed) end)
+AccelBox.FocusLost:Connect(function() local n=tonumber(AccelBox.Text); if n then accel=math.clamp(n,1,30) end; AccelBox.Text=tostring(accel) end)
+local KeyNote=Instance.new("TextLabel",FlyFrame); KeyNote.Size=UDim2.new(1,0,0,50); KeyNote.Position=UDim2.fromOffset(0,175)
+KeyNote.BackgroundColor3=C.BG2; KeyNote.TextColor3=C.SUBTEXT; KeyNote.Font=Enum.Font.Gotham; KeyNote.TextSize=11
+KeyNote.Text="W/A/S/D - Space (up) - LCtrl (down)\nPress Z anywhere to toggle fly"; KeyNote.TextWrapped=true
+corner(KeyNote,8); stroke(KeyNote,C.BORDER,1); pad(KeyNote,8,8,10,8)
+
+-- Float button on Fly tab
+local FloatBtn = mkBtn(FlyFrame,"[~] Float: OFF",234,C.BG3); FloatBtn.Size=UDim2.new(1,0,0,36)
+FloatBtn.MouseButton1Click:Connect(function()
+	if FloatEnabled then StopFloat(); FloatBtn.Text="[~] Float: OFF"; FloatBtn.BackgroundColor3=C.BG3
+	else StartFloat(); FloatBtn.Text="[~] Float: ON"; FloatBtn.BackgroundColor3=C.ACCENT2 end
+end)
+local KeyNote2=Instance.new("TextLabel",FlyFrame); KeyNote2.Size=UDim2.new(1,0,0,30); KeyNote2.Position=UDim2.fromOffset(0,276)
+KeyNote2.BackgroundColor3=C.BG2; KeyNote2.TextColor3=C.SUBTEXT; KeyNote2.Font=Enum.Font.Gotham; KeyNote2.TextSize=11
+KeyNote2.Text="Float: E = rise  |  Q = sink"; KeyNote2.TextWrapped=true
+corner(KeyNote2,8); stroke(KeyNote2,C.BORDER,1); pad(KeyNote2,6,6,10,8)
+
+-- =========================================================
+-- SAFE BUTTON CREATOR (Fix nil mkBtn error)
+-- =========================================================
+
+if not mkBtn then
+	function mkBtn(parent,text,y,color)
+
+		local b = Instance.new("TextButton")
+		b.Size = UDim2.new(1,-10,0,36)
+		b.Position = UDim2.new(0,5,0,y)
+		b.BackgroundColor3 = color or Color3.fromRGB(45,45,45)
+		b.Text = text
+		b.Font = Enum.Font.GothamBold
+		b.TextSize = 14
+		b.TextColor3 = Color3.fromRGB(255,255,255)
+		b.Parent = parent
+
+		local corner = Instance.new("UICorner",b)
+		corner.CornerRadius = UDim.new(0,8)
+
+		return b
+	end
+end
+
+-- =========================================================
+-- INVISIBILITY SYSTEM
+-- =========================================================
+
+local invisEnabled = false
+local invisSaved = {}
+local InvisBtn
+
+local INVIS_ON = Color3.fromRGB(85,255,127)
+
+local function startInvis()
+
+	if invisEnabled then return end
+
+	local char = LocalPlayer.Character
+	if not char then return end
+
+	invisEnabled = true
+	table.clear(invisSaved)
+
+	for _,v in ipairs(char:GetDescendants()) do
+		if v:IsA("BasePart") then
+			invisSaved[v] = v.LocalTransparencyModifier
+			v.LocalTransparencyModifier = 0.5
+		elseif v:IsA("Decal") then
+			invisSaved[v] = v.Transparency
+			v.Transparency = 0.5
+		end
+	end
+
+end
+
+local function stopInvis()
+
+	if not invisEnabled then return end
+
+	invisEnabled = false
+
+	for v,t in pairs(invisSaved) do
+		if v and v.Parent then
+			
+			if v:IsA("BasePart") then
+				v.LocalTransparencyModifier = t
+			else
+				v.Transparency = t
+			end
+			
+		end
+	end
+
+	table.clear(invisSaved)
+
+end
+
+local function toggleInvis()
+
+	if invisEnabled then
+		stopInvis()
+	else
+		startInvis()
+	end
+
+	if InvisBtn then
+		InvisBtn.Text =
+			invisEnabled and
+			"[I] Invis (G): ON"
+			or
+			"[I] Invis (G): OFF"
+
+		InvisBtn.BackgroundColor3 =
+			invisEnabled and
+			INVIS_ON
+			or
+			C.BG3
+	end
+
+end
+
+-- Real invis loop
+RunService.Heartbeat:Connect(function()
+
+	if not invisEnabled then return end
+
+	local char = LocalPlayer.Character
+	if not char then return end
+
+	local humanoid = char:FindFirstChildOfClass("Humanoid")
+	local root = char:FindFirstChild("HumanoidRootPart")
+
+	if not humanoid or not root then return end
+
+	local current = root.CFrame
+	local offset = humanoid.CameraOffset
+
+	local new = current * CFrame.new(0,-2000,0)
+
+	local camOffset =
+		new:ToObjectSpace(
+			CFrame.new(current.Position)
+		).Position
+
+	root.CFrame = new
+	humanoid.CameraOffset = camOffset
+
+	RunService.RenderStepped:Wait()
+
+	root.CFrame = current
+	humanoid.CameraOffset = offset
+
+end)
+
+-- Keybind
+UserInputService.InputBegan:Connect(function(input,gpe)
+	if gpe then return end
+
+	if input.KeyCode == Enum.KeyCode.G then
+		toggleInvis()
+	end
+end)
+
+-- Respawn Fix
+LocalPlayer.CharacterAdded:Connect(function()
+
+	invisEnabled = false
+	table.clear(invisSaved)
+
+	if InvisBtn then
+		InvisBtn.Text = "[I] Invis (G): OFF"
+		InvisBtn.BackgroundColor3 = C.BG3
+	end
+
+end)
+
+-- =========================================================
+-- MISC BUTTONS
+-- =========================================================
+
+local miscY = 0
+local function miscBtn(txt,col,cb)
+
+	if not MiscFrame then
+		warn("MiscFrame missing")
+		return
+	end
+
+	local b = mkBtn(MiscFrame,txt,miscY,col or C.BG3)
+
+	if cb then
+		b.MouseButton1Click:Connect(cb)
+	end
+
+	miscY = miscY + 42
+	return b
+end
+
+-- Anti Fling
+local AntiFlingBtn = miscBtn("[AF] Anti-Fling: OFF",C.BG3,function()
+
+	antiFlingEnabled = not antiFlingEnabled
+
+	if antiFlingEnabled then
+		startAntiFling()
+	else
+		stopAntiFling()
+	end
+
+	if AntiFlingBtn then
+		AntiFlingBtn.Text =
+			antiFlingEnabled and
+			"[AF] Anti-Fling: ON"
+			or
+			"[AF] Anti-Fling: OFF"
+
+		AntiFlingBtn.BackgroundColor3 =
+			antiFlingEnabled and
+			C.SUCCESS
+			or
+			C.BG3
+	end
+
+end)
+
+-- ESP
+local EspBtn = miscBtn("[E] ESP: OFF",C.BG3,function()
+
+	espEnabled = not espEnabled
+	clearESP()
+
+	if espEnabled then
+		for _,p in ipairs(Players:GetPlayers()) do
+			applyHighlight(p)
+		end
+	end
+
+	if EspBtn then
+		EspBtn.Text =
+			espEnabled and
+			"[E] ESP: ON"
+			or
+			"[E] ESP: OFF"
+
+		EspBtn.BackgroundColor3 =
+			espEnabled and
+			C.ACCENT2
+			or
+			C.BG3
+	end
+
+end)
+
+-- Invis
+InvisBtn = miscBtn(
+	"[I] Invis (G): OFF",
+	C.BG3,
+	toggleInvis
+)
+
+-- Rejoin
+miscBtn("[R] Rejoin",C.BG3,function()
+	TeleportService:Teleport(game.PlaceId,LocalPlayer)
+end)
+
+-- Refresh
+miscBtn("[+] Refresh Character",C.BG3,function()
+	if LocalPlayer.Character then
+		LocalPlayer.Character:BreakJoints()
+	end
+end)
+
+-- Server Hop
+miscBtn("[W] Server Hop",C.BG3,function()
+
+	local placeId = game.PlaceId
+	local cursor = ""
+	local tried = {}
+
+	while true do
+
+		local url =
+		"https://games.roblox.com/v1/games/"
+		..placeId..
+		"/servers/Public?limit=100"
+		..(cursor ~= "" and "&cursor="..cursor or "")
+
+		local res = HttpService:JSONDecode(game:HttpGet(url))
+
+		for _,server in ipairs(res.data) do
+			if server.playing < server.maxPlayers
+			and server.id ~= game.JobId
+			and not tried[server.id] then
+
+				tried[server.id] = true
+
+				TeleportService:TeleportToPlaceInstance(
+					placeId,
+					server.id,
+					LocalPlayer
+				)
+
+				return
+			end
+		end
+
+		if not res.nextPageCursor then
+			warn("[Cat] No servers")
+			return
+		end
+
+		cursor = res.nextPageCursor
+		task.wait(0.2)
+
+	end
+
+end)
+
+-- =========================================================
+-- SCRIPTS PAGE
+do -- scope
+-- =========================================================
+local UrlBox=Instance.new("TextBox",ScriptsFrame); UrlBox.Size=UDim2.new(1,0,0,34)
+UrlBox.PlaceholderText="[>] Paste raw script URL..."; UrlBox.BackgroundColor3=C.BG2
+UrlBox.TextColor3=C.TEXT; UrlBox.PlaceholderColor3=C.SUBTEXT; UrlBox.Font=Enum.Font.Gotham; UrlBox.TextSize=12
+UrlBox.ClearTextOnFocus=false; UrlBox.TextXAlignment=Enum.TextXAlignment.Left; UrlBox.TextTruncate=Enum.TextTruncate.AtEnd
+corner(UrlBox,8); stroke(UrlBox,C.BORDER,1); pad(UrlBox,0,0,10,8)
+
+local StatusLabel=Instance.new("TextLabel",ScriptsFrame); StatusLabel.Size=UDim2.new(1,0,0,18)
+StatusLabel.Position=UDim2.fromOffset(0,42); StatusLabel.BackgroundTransparency=1; StatusLabel.Text=""
+StatusLabel.Font=Enum.Font.Gotham; StatusLabel.TextSize=11; StatusLabel.TextColor3=C.SUBTEXT; StatusLabel.TextXAlignment=Enum.TextXAlignment.Left
+
+local ExecBtn=Instance.new("TextButton",ScriptsFrame); ExecBtn.Size=UDim2.new(0.72,-4,0,34)
+ExecBtn.Position=UDim2.fromOffset(0,64); ExecBtn.Text="[>] Execute"; ExecBtn.Font=Enum.Font.GothamSemibold
+ExecBtn.TextSize=13; ExecBtn.BackgroundColor3=C.ACCENT; ExecBtn.TextColor3=C.WHITE; ExecBtn.AutoButtonColor=false
+corner(ExecBtn,8); stroke(ExecBtn,C.BORDER,1); hoverFX(ExecBtn,C.ACCENT,C.ACCENT2)
+
+local ClearUrlBtn=Instance.new("TextButton",ScriptsFrame); ClearUrlBtn.Size=UDim2.new(0.28,-4,0,34)
+ClearUrlBtn.Position=UDim2.new(0.72,4,0,64); ClearUrlBtn.Text="X Clear"; ClearUrlBtn.Font=Enum.Font.GothamSemibold
+ClearUrlBtn.TextSize=13; ClearUrlBtn.BackgroundColor3=C.BG3; ClearUrlBtn.TextColor3=C.WHITE; ClearUrlBtn.AutoButtonColor=false
+corner(ClearUrlBtn,8); stroke(ClearUrlBtn,C.BORDER,1); hoverFX(ClearUrlBtn,C.BG3,Color3.fromRGB(45,45,58))
+
+local presetsLabel=Instance.new("TextLabel",ScriptsFrame); presetsLabel.Size=UDim2.new(1,0,0,16)
+presetsLabel.Position=UDim2.fromOffset(0,108); presetsLabel.BackgroundTransparency=1; presetsLabel.Text="PRESETS"
+presetsLabel.Font=Enum.Font.GothamSemibold; presetsLabel.TextSize=10; presetsLabel.TextColor3=C.SUBTEXT; presetsLabel.TextXAlignment=Enum.TextXAlignment.Left
+
+local PRESETS={
+	{"Infinite Yield","https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"},
+	{"XVC Hub","https://pastebin.com/raw/Piw5bqGq"},
+	{"Waypoint GUI","https://raw.githubusercontent.com/Catchallcat5382/Cats-Scripts/refs/heads/main/Waypoint%20GUI"},
+	{"Position Logger","https://raw.githubusercontent.com/Catchallcat5382/Cats-Scripts/refs/heads/main/Position%20Logger"},
+	{"File Explorer","https://raw.githubusercontent.com/Catchallcat5382/Cats-Scripts/refs/heads/main/File%20Explorer"},
+}
+local presetY=130
+for _,preset in ipairs(PRESETS) do
+	local pb=Instance.new("TextButton",ScriptsFrame); pb.Size=UDim2.new(1,0,0,30); pb.Position=UDim2.fromOffset(0,presetY)
+	pb.Text="  "..preset[1]; pb.Font=Enum.Font.Gotham; pb.TextSize=12; pb.BackgroundColor3=C.BG2
+	pb.TextColor3=C.TEXT; pb.TextXAlignment=Enum.TextXAlignment.Left; pb.AutoButtonColor=false
+	corner(pb,7); stroke(pb,C.BORDER,1); hoverFX(pb,C.BG2,C.BG3)
+	local url=preset[2]; pb.MouseButton1Click:Connect(function() UrlBox.Text=url; StatusLabel.Text="URL loaded - press Execute"; StatusLabel.TextColor3=C.SUBTEXT end)
+	presetY=presetY+34
+end
+local function executeScript(url)
+	if url=="" then StatusLabel.Text="X  No URL entered"; StatusLabel.TextColor3=C.DANGER; return end
+	StatusLabel.Text="[..] Fetching..."; StatusLabel.TextColor3=C.WARNING
+	task.spawn(function()
+		local ok,result=pcall(function()
+			local src=game:HttpGet(url,true); local fn,err=loadstring(src)
+			if not fn then error("Parse error: "..tostring(err)) end; fn()
+		end)
+		if ok then StatusLabel.Text="[OK] Loaded successfully"; StatusLabel.TextColor3=C.SUCCESS
+		else StatusLabel.Text="X  "..tostring(result):sub(1,60); StatusLabel.TextColor3=C.DANGER end
+	end)
+end
+ExecBtn.MouseButton1Click:Connect(function() executeScript(UrlBox.Text) end)
+ClearUrlBtn.MouseButton1Click:Connect(function() UrlBox.Text=""; StatusLabel.Text="" end)
+
+end -- scope
+-- =========================================================
+-- AI CHAT PAGE
+-- =========================================================
+local AI_MODELS={
+	{id="moonshotai/kimi-k2-instruct",                   label="Kimi K2"},
+	{id="openai/gpt-oss-120b",                           label="GPT-OSS 120B"},
+	{id="llama-3.3-70b-versatile",                       label="Llama 3.3 70B"},
+	{id="meta-llama/llama-4-maverick-17b-128e-instruct", label="Llama 4 Maverick"},
+	{id="meta-llama/llama-4-scout-17b-16e-instruct",     label="Llama 4 Scout"},
+	{id="qwen/qwen3-32b",                                label="Qwen3 32B"},
+	{id="llama-3.1-8b-instant",                          label="Llama 3.1 8B"},
+	{id="mixtral-8x7b-32768",                            label="Mixtral 8x7B"},
+}
+local ai_selectedModel=AI_MODELS[1].id
+local GROQ_URL="https://api.groq.com/openai/v1/chat/completions"
+local AI_COOLDOWN=3; local MAX_HISTORY=20
+local GRAMMAR_SUFFIX=" Always use correct grammar, spelling, and punctuation. Write in complete sentences. Do NOT start your reply by repeating or addressing the player's name -- just reply to what they said directly. IMPORTANT: Never mention, name, or discuss real-world hate figures, extremist groups, slurs, or graphic historical atrocities. If a question would require doing so, politely say you can't help with that topic."
+
+local function httpPost(url,headers,body)
+	local fn=(syn and syn.request) or (http and http.request)
+		or (typeof(request)=="function" and request) or (typeof(http_request)=="function" and http_request)
+		or (fluxus and fluxus.request)
+	if not fn then return nil,"No HTTP function found" end
+	local ok,resp=pcall(fn,{Url=url,Method="POST",Headers=headers,Body=body})
+	if not ok then return nil,tostring(resp) end; return resp,nil
+end
+
+local ai_history={}
+local function ai_getHistory(uid) if not ai_history[uid] then ai_history[uid]={} end; return ai_history[uid] end
+local function ai_addToHistory(uid,role,content)
+	local h=ai_getHistory(uid); table.insert(h,{role=role,content=content})
+	while #h>MAX_HISTORY do table.remove(h,1) end
+end
+local function ai_callGroq(apiKey,systemPrompt,userId,senderName,userMessage)
+	if not apiKey or apiKey=="" then return nil,"NO_KEY" end
+	ai_addToHistory(userId,"user",senderName.." says: "..userMessage)
+	local messages={{role="system",content=systemPrompt..GRAMMAR_SUFFIX}}
+	for _,e in ipairs(ai_getHistory(userId)) do table.insert(messages,e) end
+	local ok,body=pcall(HttpService.JSONEncode,HttpService,{model=ai_selectedModel,max_tokens=150,messages=messages})
+	if not ok then return nil,"JSON_ENCODE" end
+	local resp,err=httpPost(GROQ_URL,{["Content-Type"]="application/json",["Authorization"]="Bearer "..apiKey},body)
+	if not resp then local h=ai_getHistory(userId); if #h>0 then table.remove(h,#h) end; return nil,err end
+	if resp.StatusCode==429 then return nil,"RATE_LIMITED" end
+	if resp.StatusCode==401 then return nil,"BAD_KEY" end
+	if resp.StatusCode~=200 then
+		local h=ai_getHistory(userId); if #h>0 then table.remove(h,#h) end
+		local msg="HTTP_"..tostring(resp.StatusCode)
+		pcall(function() local d=HttpService:JSONDecode(resp.Body); if d.error and d.error.message then msg=msg..": "..d.error.message end end)
+		return nil,msg
+	end
+	local ok2,data=pcall(HttpService.JSONDecode,HttpService,resp.Body)
+	if not ok2 then return nil,"JSON_DECODE" end
+	local reply=data.choices[1].message.content; ai_addToHistory(userId,"assistant",reply); return reply,nil
+end
+
+local ai_chatSendTimes={}; local ROBLOX_CHAT_LIMIT=5; local ROBLOX_CHAT_WINDOW=6
+local function ai_canSendRobloxChat()
+	local now=tick()
+	for i=#ai_chatSendTimes,1,-1 do if now-ai_chatSendTimes[i]>ROBLOX_CHAT_WINDOW then table.remove(ai_chatSendTimes,i) end end
+	return #ai_chatSendTimes<ROBLOX_CHAT_LIMIT
+end
+local function ai_recordSend() table.insert(ai_chatSendTimes,tick()) end
+
+local AI_BLOCKED="Sorry, I can't answer that. Please try asking something else!"
+local function vim_escape(s) return s:gsub("([%(%)%.%%%+%-%*%?%[%^%$])","%%%1") end
+local AI_BAD={
+	"fuck","shit","bitch","cunt","dick","cock","pussy","bastard","piss","slut","whore","fag","nigga","nigger","retard",
+	"kys","kms","kill yourself","shoot up","stab","murder",
+	"porn","sex","nude","naked","nsfw","hentai","rape","molest","pedophile","pedo","loli",
+	"cocaine","heroin","meth","fentanyl","crack",
+	"nazi","nazis","nazism","hitler","adolf","himmler","goebbels","gestapo","waffen","ss officer",
+	"kkk","ku klux","white power","white supremac","ethnic cleansing","holocaust denial",
+	"osama","bin laden","isis","isil","al qaeda","jihadi","terrorist attack",
+	"lynching","noose","gas chamber","concentration camp","exterminate",
+}
+local AI_CM={["@"]="a",["4"]="a",["3"]="e",["1"]="i",["!"]="i",["0"]="o",["5"]="s",["$"]="s",["7"]="t"}
+local function ai_norm(msg) local s=msg:lower(); for c,r in pairs(AI_CM) do s=s:gsub(vim_escape(c),r) end; return s:gsub("[%s%.%-_*,;:!?/\\|]",""):gsub("(.)%1+","%1") end
+local function ai_hasBad(msg) local n=ai_norm(msg); local l=msg:lower():gsub("[%s%.%-_*]",""); for _,w in ipairs(AI_BAD) do if n:find(ai_norm(w),1,true) or l:find(w:gsub("%s",""),1,true) then return true end end; return false end
+local function ai_block(msg) return msg:match("^[%s#]+$")~=nil or ai_hasBad(msg) end
+
+local ai_liveLog={}; local ai_transcripts={}; local ai_t0=tick(); local txIdN=0
+local function ai_ts() local e=tick()-ai_t0; return string.format("%02d:%02d",math.floor(e/60),math.floor(e%60)) end
+local function genId()
+	txIdN+=1; local chars="abcdefghijklmnopqrstuvwxyz0123456789"; local s=""
+	math.randomseed(tick()*1000+txIdN); for _=1,4 do local i=math.random(1,#chars); s=s..chars:sub(i,i) end
+	return "tx-"..s..tostring(txIdN)
+end
+
+-- ── AI TAB UI ────────────────────────────────────────────
+local aiKeyLbl=Instance.new("TextLabel",AIFrame); aiKeyLbl.Size=UDim2.new(1,0,0,14)
+aiKeyLbl.Position=UDim2.fromOffset(0,0); aiKeyLbl.BackgroundTransparency=1
+aiKeyLbl.Text="API KEY  (console.groq.com)"; aiKeyLbl.Font=Enum.Font.GothamBold
+aiKeyLbl.TextSize=9; aiKeyLbl.TextColor3=C.SUBTEXT; aiKeyLbl.TextXAlignment=Enum.TextXAlignment.Left
+
+local aiKeyRow=Instance.new("Frame",AIFrame); aiKeyRow.Size=UDim2.new(1,0,0,30)
+aiKeyRow.Position=UDim2.fromOffset(0,16); aiKeyRow.BackgroundColor3=C.BG2; corner(aiKeyRow,8); stroke(aiKeyRow,C.BORDER,1)
+
+local aiKeyBox=Instance.new("TextBox",aiKeyRow); aiKeyBox.Size=UDim2.new(1,-60,1,0)
+aiKeyBox.BackgroundTransparency=1; aiKeyBox.PlaceholderText="gsk_xxxxxxx"
+aiKeyBox.PlaceholderColor3=C.SUBTEXT; aiKeyBox.Text=""
+aiKeyBox.Font=Enum.Font.Code; aiKeyBox.TextSize=11
+aiKeyBox.TextXAlignment=Enum.TextXAlignment.Left; aiKeyBox.ClearTextOnFocus=false
+pad(aiKeyBox,0,0,8,0)
+
+local aiKeyMask=Instance.new("TextLabel",aiKeyRow); aiKeyMask.Size=UDim2.new(1,-60,1,0)
+aiKeyMask.BackgroundColor3=C.BG2
+aiKeyMask.BackgroundTransparency=0; aiKeyMask.BorderSizePixel=0
+aiKeyMask.Font=Enum.Font.Code; aiKeyMask.TextSize=11; aiKeyMask.TextColor3=C.TEXT
+aiKeyMask.TextXAlignment=Enum.TextXAlignment.Left; aiKeyMask.Visible=false
+pad(aiKeyMask,0,0,8,0)
+
+local ai_keyHidden=false
+local function ai_refreshMask()
+	if ai_keyHidden then
+		local len=math.max(#aiKeyBox.Text,0)
+		aiKeyMask.Text=string.rep("*",len)
+		aiKeyMask.Visible=true
+	else
+		aiKeyMask.Visible=false
+	end
+end
+
+local aiShowBtn=Instance.new("TextButton",aiKeyRow); aiShowBtn.Size=UDim2.new(0,52,0,22)
+aiShowBtn.Position=UDim2.new(1,-56,0.5,-11); aiShowBtn.BackgroundColor3=C.BG3; aiShowBtn.Text="HIDE"
+aiShowBtn.Font=Enum.Font.GothamBold; aiShowBtn.TextSize=10; aiShowBtn.TextColor3=C.ACCENT
+aiShowBtn.AutoButtonColor=false; corner(aiShowBtn,6)
+
+aiKeyBox:GetPropertyChangedSignal("Text"):Connect(function()
+	if #aiKeyBox.Text > 0 and not ai_keyHidden then
+		ai_keyHidden = true
+		aiShowBtn.Text = "SHOW"
+	end
+	ai_refreshMask()
+end)
+
+aiShowBtn.MouseButton1Click:Connect(function()
+	ai_keyHidden=not ai_keyHidden
+	aiShowBtn.Text=ai_keyHidden and "SHOW" or "HIDE"
+	ai_refreshMask()
+end)
+
+local aiModelLbl=Instance.new("TextLabel",AIFrame); aiModelLbl.Size=UDim2.new(1,0,0,14)
+aiModelLbl.Position=UDim2.fromOffset(0,52); aiModelLbl.BackgroundTransparency=1; aiModelLbl.Text="AI MODEL"
+aiModelLbl.Font=Enum.Font.GothamBold; aiModelLbl.TextSize=9; aiModelLbl.TextColor3=C.SUBTEXT; aiModelLbl.TextXAlignment=Enum.TextXAlignment.Left
+
+local aiModelBtn=Instance.new("TextButton",AIFrame); aiModelBtn.Size=UDim2.new(1,0,0,30)
+aiModelBtn.Position=UDim2.fromOffset(0,68); aiModelBtn.BackgroundColor3=C.BG2; aiModelBtn.Text=""; aiModelBtn.AutoButtonColor=false
+corner(aiModelBtn,8); stroke(aiModelBtn,C.BORDER,1)
+local aiModelName=Instance.new("TextLabel",aiModelBtn); aiModelName.Size=UDim2.new(1,-28,1,0)
+aiModelName.Position=UDim2.fromOffset(8,0); aiModelName.BackgroundTransparency=1; aiModelName.Text=AI_MODELS[1].label
+aiModelName.Font=Enum.Font.GothamSemibold; aiModelName.TextSize=12; aiModelName.TextColor3=C.TEXT; aiModelName.TextXAlignment=Enum.TextXAlignment.Left
+local aiDropArrow=Instance.new("TextLabel",aiModelBtn); aiDropArrow.Size=UDim2.new(0,20,1,0)
+aiDropArrow.Position=UDim2.new(1,-22,0,0); aiDropArrow.BackgroundTransparency=1; aiDropArrow.Text="v"
+aiDropArrow.Font=Enum.Font.GothamBold; aiDropArrow.TextSize=12; aiDropArrow.TextColor3=C.ACCENT; aiDropArrow.TextXAlignment=Enum.TextXAlignment.Center
+
+local aiDropList=Instance.new("Frame",AIFrame); aiDropList.Size=UDim2.new(1,0,0,0)
+aiDropList.Position=UDim2.fromOffset(0,100); aiDropList.BackgroundColor3=C.BG2
+aiDropList.ClipsDescendants=true; aiDropList.Visible=false; aiDropList.ZIndex=20
+corner(aiDropList,8); stroke(aiDropList,C.BORDER,1)
+Instance.new("UIListLayout",aiDropList).Padding=UDim.new(0,0)
+local ai_dropOpen=false
+for _,model in ipairs(AI_MODELS) do
+	local item=Instance.new("TextButton",aiDropList); item.Size=UDim2.new(1,0,0,28); item.BackgroundColor3=C.BG2
+	item.Text="  "..model.label; item.Font=Enum.Font.GothamSemibold; item.TextSize=12
+	item.TextColor3=C.TEXT; item.TextXAlignment=Enum.TextXAlignment.Left; item.AutoButtonColor=false; item.ZIndex=21
+	hoverFX(item,C.BG2,C.BG3)
+	local mid=model.id; local mlabel=model.label
+	item.MouseButton1Click:Connect(function()
+		ai_selectedModel=mid; aiModelName.Text=mlabel; ai_dropOpen=false; aiDropArrow.Text="v"
+		tw(aiDropList,{Size=UDim2.new(1,0,0,0)}); task.delay(0.2,function() if not ai_dropOpen then aiDropList.Visible=false end end)
+	end)
+end
+aiModelBtn.MouseButton1Click:Connect(function()
+	ai_dropOpen=not ai_dropOpen
+	if ai_dropOpen then aiDropList.Visible=true; aiDropList.Size=UDim2.new(1,0,0,0); tw(aiDropList,{Size=UDim2.new(1,0,0,#AI_MODELS*28)}); aiDropArrow.Text="^"
+	else aiDropArrow.Text="v"; tw(aiDropList,{Size=UDim2.new(1,0,0,0)}); task.delay(0.2,function() if not ai_dropOpen then aiDropList.Visible=false end end) end
+end)
+
+local function mkAiToggle(parent,labelTxt,y)
+	local row=Instance.new("Frame",parent); row.Size=UDim2.new(1,0,0,28); row.Position=UDim2.fromOffset(0,y)
+	row.BackgroundColor3=C.BG2; corner(row,6); stroke(row,C.BORDER,1)
+	local lbl=Instance.new("TextLabel",row); lbl.Size=UDim2.new(1,-50,1,0); lbl.Position=UDim2.fromOffset(8,0)
+	lbl.BackgroundTransparency=1; lbl.Text=labelTxt; lbl.Font=Enum.Font.GothamSemibold; lbl.TextSize=11
+	lbl.TextColor3=C.SUBTEXT; lbl.TextXAlignment=Enum.TextXAlignment.Left
+	local track=Instance.new("Frame",row); track.Size=UDim2.fromOffset(36,18); track.Position=UDim2.new(1,-42,0.5,-9)
+	track.BackgroundColor3=C.BG3; corner(track,9)
+	local thumb=Instance.new("Frame",track); thumb.Size=UDim2.fromOffset(14,14); thumb.Position=UDim2.fromOffset(2,2)
+	thumb.BackgroundColor3=C.SUBTEXT; corner(thumb,7)
+	local state=false
+	local function toggle()
+		state=not state; tw(track,{BackgroundColor3=state and C.ACCENT or C.BG3})
+		tw(thumb,{Position=state and UDim2.fromOffset(20,2) or UDim2.fromOffset(2,2),BackgroundColor3=state and C.WHITE or C.SUBTEXT})
+	end
+	track.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then toggle() end end)
+	return function() return state end, lbl
+end
+
+local ai_getAutoRespond, _arLbl = mkAiToggle(AIFrame,"Auto-Respond: OFF",108)
+do
+	local arRow = _arLbl.Parent
+	local arTrack = arRow:FindFirstChildOfClass("Frame")
+	if arTrack then
+		arTrack.InputBegan:Connect(function(i)
+			if i.UserInputType~=Enum.UserInputType.MouseButton1 then return end
+			task.defer(function()
+				_arLbl.Text = ai_getAutoRespond() and "Auto-Respond: ON" or "Auto-Respond: OFF"
+			end)
+		end)
+	end
+end
+local ai_getSendChat    = mkAiToggle(AIFrame,"Send reply to game chat",140)
+local ai_getRespondAll  = mkAiToggle(AIFrame,"Respond to ALL messages",172)
+local ai_getRespondSelf = mkAiToggle(AIFrame,"Respond to own messages",204)
+
+local aiSysLbl=Instance.new("TextLabel",AIFrame); aiSysLbl.Size=UDim2.new(1,0,0,14)
+aiSysLbl.Position=UDim2.fromOffset(0,238); aiSysLbl.BackgroundTransparency=1; aiSysLbl.Text="SYSTEM PROMPT"
+aiSysLbl.Font=Enum.Font.GothamBold; aiSysLbl.TextSize=9; aiSysLbl.TextColor3=C.SUBTEXT; aiSysLbl.TextXAlignment=Enum.TextXAlignment.Left
+local aiSysBox=Instance.new("TextBox",AIFrame); aiSysBox.Size=UDim2.new(1,0,0,42); aiSysBox.Position=UDim2.fromOffset(0,254)
+aiSysBox.BackgroundColor3=C.BG2; aiSysBox.TextColor3=C.TEXT; aiSysBox.PlaceholderText="You are a helpful Roblox assistant..."
+aiSysBox.PlaceholderColor3=C.SUBTEXT; aiSysBox.Text="You are a helpful Roblox assistant. Keep replies short, casual, and under 150 characters."
+aiSysBox.Font=Enum.Font.Gotham; aiSysBox.TextSize=11; aiSysBox.MultiLine=true; aiSysBox.TextWrapped=true
+aiSysBox.TextXAlignment=Enum.TextXAlignment.Left; aiSysBox.TextYAlignment=Enum.TextYAlignment.Top; aiSysBox.ClearTextOnFocus=false
+corner(aiSysBox,8); stroke(aiSysBox,C.BORDER,1); pad(aiSysBox,6,6,8,8)
+
+local aiTriggerRow=Instance.new("Frame",AIFrame); aiTriggerRow.Size=UDim2.new(1,0,0,28); aiTriggerRow.Position=UDim2.fromOffset(0,302)
+aiTriggerRow.BackgroundColor3=C.BG2; corner(aiTriggerRow,8); stroke(aiTriggerRow,C.BORDER,1)
+local aiTrigLbl=Instance.new("TextLabel",aiTriggerRow); aiTrigLbl.Size=UDim2.new(0,80,1,0); aiTrigLbl.Position=UDim2.fromOffset(8,0)
+aiTrigLbl.BackgroundTransparency=1; aiTrigLbl.Text="Trigger word:"; aiTrigLbl.Font=Enum.Font.GothamSemibold
+aiTrigLbl.TextSize=11; aiTrigLbl.TextColor3=C.SUBTEXT; aiTrigLbl.TextXAlignment=Enum.TextXAlignment.Left
+local aiTrigBox=Instance.new("TextBox",aiTriggerRow); aiTrigBox.Size=UDim2.new(1,-96,0,22); aiTrigBox.Position=UDim2.new(0,88,0.5,-11)
+aiTrigBox.BackgroundColor3=C.BG3; aiTrigBox.TextColor3=C.TEXT; aiTrigBox.Text="!ai"
+aiTrigBox.Font=Enum.Font.GothamSemibold; aiTrigBox.TextSize=12; aiTrigBox.ClearTextOnFocus=false
+corner(aiTrigBox,6); stroke(aiTrigBox,C.BORDER,1); pad(aiTrigBox,0,0,6,6)
+
+local aiLogLbl=Instance.new("TextLabel",AIFrame); aiLogLbl.Size=UDim2.new(1,0,0,14); aiLogLbl.Position=UDim2.fromOffset(0,338)
+aiLogLbl.BackgroundTransparency=1; aiLogLbl.Text="CONVERSATION LOG"; aiLogLbl.Font=Enum.Font.GothamBold
+aiLogLbl.TextSize=9; aiLogLbl.TextColor3=C.SUBTEXT; aiLogLbl.TextXAlignment=Enum.TextXAlignment.Left
+
+local aiClearLogBtn=Instance.new("TextButton",AIFrame); aiClearLogBtn.Size=UDim2.fromOffset(44,14)
+aiClearLogBtn.Position=UDim2.new(1,-44,0,338); aiClearLogBtn.BackgroundColor3=Color3.fromRGB(40,20,20)
+aiClearLogBtn.Text="CLEAR"; aiClearLogBtn.Font=Enum.Font.GothamBold; aiClearLogBtn.TextSize=9
+aiClearLogBtn.TextColor3=C.DANGER; aiClearLogBtn.AutoButtonColor=false; corner(aiClearLogBtn,4)
+
+local aiLog=Instance.new("ScrollingFrame",AIFrame); aiLog.Size=UDim2.new(1,0,0,200); aiLog.Position=UDim2.fromOffset(0,356)
+aiLog.BackgroundColor3=C.BG2; aiLog.BorderSizePixel=0; aiLog.ScrollBarThickness=3; aiLog.ScrollBarImageColor3=C.ACCENT
+aiLog.CanvasSize=UDim2.new(0,0,0,0); aiLog.AutomaticCanvasSize=Enum.AutomaticSize.Y; corner(aiLog,8); stroke(aiLog,C.BORDER,1)
+local aiLogLL=Instance.new("UIListLayout",aiLog); aiLogLL.Padding=UDim.new(0,4)
+local aiLogPad=Instance.new("UIPadding",aiLog)
+aiLogPad.PaddingLeft=UDim.new(0,6); aiLogPad.PaddingRight=UDim.new(0,6); aiLogPad.PaddingTop=UDim.new(0,6); aiLogPad.PaddingBottom=UDim.new(0,6)
+
+local aiTxBtn=Instance.new("TextButton",AIFrame); aiTxBtn.Size=UDim2.new(1,0,0,28); aiTxBtn.Position=UDim2.fromOffset(0,562)
+aiTxBtn.BackgroundColor3=C.BG3; aiTxBtn.Text="[TX] Transcripts"; aiTxBtn.Font=Enum.Font.GothamBold
+aiTxBtn.TextSize=11; aiTxBtn.TextColor3=C.ACCENT; aiTxBtn.AutoButtonColor=false; corner(aiTxBtn,8); stroke(aiTxBtn,C.ACCENT,1)
+hoverFX(aiTxBtn,C.BG3,Color3.fromRGB(45,45,58))
+
+local aiTutBtn=Instance.new("TextButton",AIFrame); aiTutBtn.Size=UDim2.new(1,0,0,28); aiTutBtn.Position=UDim2.fromOffset(0,596)
+aiTutBtn.BackgroundColor3=C.BG3; aiTutBtn.Text="[?] How to Setup (Tutorial)"; aiTutBtn.Font=Enum.Font.GothamBold
+aiTutBtn.TextSize=11; aiTutBtn.TextColor3=C.YELLOW; aiTutBtn.AutoButtonColor=false; corner(aiTutBtn,8); stroke(aiTutBtn,C.YELLOW,1)
+hoverFX(aiTutBtn,C.BG3,Color3.fromRGB(45,45,35))
+
+local aiFooter=Instance.new("TextLabel",AIFrame); aiFooter.Size=UDim2.new(1,0,0,14); aiFooter.Position=UDim2.fromOffset(0,630)
+aiFooter.BackgroundTransparency=1; aiFooter.Text="Enter API key to get started."
+aiFooter.Font=Enum.Font.Gotham; aiFooter.TextSize=10; aiFooter.TextColor3=C.SUBTEXT; aiFooter.TextXAlignment=Enum.TextXAlignment.Left
+
+local ai_logCount=0
+local function ai_addLog(speaker,message,kind)
+	if not aiLog.Parent then return end
+	ai_logCount+=1
+	table.insert(ai_liveLog,{kind=kind,speaker=speaker,message=message,time=ai_ts()})
+	local bgColor=kind=="ai" and Color3.fromRGB(18,22,42) or kind=="sys" and Color3.fromRGB(30,20,20) or Color3.fromRGB(22,28,55)
+	local nameColor=kind=="ai" and Color3.fromRGB(160,80,255) or kind=="sys" and C.WARNING or Color3.fromRGB(80,140,255)
+	local nameText=kind=="ai" and "[AI] Groq" or kind=="sys" and "[!] System" or "[>] "..tostring(speaker)
+	local entry=Instance.new("Frame",aiLog); entry.Size=UDim2.new(1,0,0,0); entry.AutomaticSize=Enum.AutomaticSize.Y
+	entry.BackgroundColor3=bgColor; entry.LayoutOrder=ai_logCount; corner(entry,6)
+	local ep=Instance.new("UIPadding",entry)
+	ep.PaddingLeft=UDim.new(0,6); ep.PaddingRight=UDim.new(0,6); ep.PaddingTop=UDim.new(0,4); ep.PaddingBottom=UDim.new(0,4)
+	local ell=Instance.new("UIListLayout",entry); ell.Padding=UDim.new(0,2)
+	local nameLbl=Instance.new("TextLabel",entry); nameLbl.Size=UDim2.new(1,0,0,14)
+	nameLbl.BackgroundTransparency=1; nameLbl.Text=nameText; nameLbl.Font=Enum.Font.GothamBold
+	nameLbl.TextSize=10; nameLbl.TextColor3=nameColor; nameLbl.TextXAlignment=Enum.TextXAlignment.Left; nameLbl.LayoutOrder=1
+	local msgLbl=Instance.new("TextLabel",entry); msgLbl.Size=UDim2.new(1,0,0,0); msgLbl.AutomaticSize=Enum.AutomaticSize.Y
+	msgLbl.BackgroundTransparency=1; msgLbl.Text=message; msgLbl.Font=Enum.Font.Gotham; msgLbl.TextSize=12
+	msgLbl.TextColor3=C.TEXT; msgLbl.TextXAlignment=Enum.TextXAlignment.Left; msgLbl.TextWrapped=true; msgLbl.LayoutOrder=2
+	task.defer(function() if aiLog.Parent then aiLog.CanvasPosition=Vector2.new(0,math.huge) end end)
+end
+aiClearLogBtn.MouseButton1Click:Connect(function()
+	for _,c in ipairs(aiLog:GetChildren()) do if c:IsA("Frame") then c:Destroy() end end; ai_logCount=0
+end)
+
+do -- scope TRANSCRIPT PANEL
+local TxPanel=Instance.new("Frame",ScreenGui); TxPanel.Size=UDim2.fromOffset(300,420)
+TxPanel.Position=UDim2.new(0.62-0.32,0,0.18,0); TxPanel.BackgroundColor3=C.BG; TxPanel.Visible=false
+TxPanel.ClipsDescendants=true; TxPanel.ZIndex=30; corner(TxPanel,12); stroke(TxPanel,C.ACCENT,1.5)
+local txHdr=Instance.new("Frame",TxPanel); txHdr.Size=UDim2.new(1,0,0,38); txHdr.BackgroundColor3=C.BG2
+corner(txHdr,10); stroke(txHdr,C.BORDER,1)
+local txTitle=Instance.new("TextLabel",txHdr); txTitle.Size=UDim2.new(1,-50,1,0); txTitle.Position=UDim2.fromOffset(10,0)
+txTitle.BackgroundTransparency=1; txTitle.Text="[TX] Transcripts"; txTitle.Font=Enum.Font.GothamBold
+txTitle.TextSize=13; txTitle.TextColor3=C.WHITE; txTitle.TextXAlignment=Enum.TextXAlignment.Left
+local txCloseBtn=Instance.new("TextButton",txHdr); txCloseBtn.Size=UDim2.fromOffset(28,24)
+txCloseBtn.Position=UDim2.new(1,-34,0.5,-12); txCloseBtn.BackgroundColor3=C.DANGER; txCloseBtn.Text="X"
+txCloseBtn.Font=Enum.Font.GothamBold; txCloseBtn.TextSize=12; txCloseBtn.TextColor3=C.WHITE; txCloseBtn.AutoButtonColor=false; corner(txCloseBtn,5)
+txCloseBtn.MouseButton1Click:Connect(function() TxPanel.Visible=false end)
+local txSnapBtn=Instance.new("TextButton",TxPanel); txSnapBtn.Size=UDim2.new(1,-16,0,30)
+txSnapBtn.Position=UDim2.fromOffset(8,46); txSnapBtn.BackgroundColor3=Color3.fromRGB(20,45,20)
+txSnapBtn.Text="[+] Snapshot Current Log"; txSnapBtn.Font=Enum.Font.GothamBold; txSnapBtn.TextSize=11
+txSnapBtn.TextColor3=C.SUCCESS; txSnapBtn.AutoButtonColor=false; corner(txSnapBtn,7); stroke(txSnapBtn,C.SUCCESS,1)
+hoverFX(txSnapBtn,Color3.fromRGB(20,45,20),Color3.fromRGB(28,60,28))
+local txStatusLbl=Instance.new("TextLabel",TxPanel); txStatusLbl.Size=UDim2.new(1,-16,0,14)
+txStatusLbl.Position=UDim2.fromOffset(8,82); txStatusLbl.BackgroundTransparency=1; txStatusLbl.Text="No transcripts yet. Snapshot to save."
+txStatusLbl.Font=Enum.Font.Gotham; txStatusLbl.TextSize=10; txStatusLbl.TextColor3=C.SUBTEXT; txStatusLbl.TextXAlignment=Enum.TextXAlignment.Left
+local txListScroll=Instance.new("ScrollingFrame",TxPanel); txListScroll.Size=UDim2.new(1,-16,1,-106)
+txListScroll.Position=UDim2.fromOffset(8,100); txListScroll.BackgroundColor3=C.BG2; txListScroll.BorderSizePixel=0
+txListScroll.ScrollBarThickness=3; txListScroll.ScrollBarImageColor3=C.ACCENT
+txListScroll.CanvasSize=UDim2.new(0,0,0,0); txListScroll.AutomaticCanvasSize=Enum.AutomaticSize.Y
+corner(txListScroll,8); stroke(txListScroll,C.BORDER,1)
+local txListLL=Instance.new("UIListLayout",txListScroll); txListLL.Padding=UDim.new(0,6)
+local txListPad=Instance.new("UIPadding",txListScroll)
+txListPad.PaddingLeft=UDim.new(0,6); txListPad.PaddingRight=UDim.new(0,6); txListPad.PaddingTop=UDim.new(0,6); txListPad.PaddingBottom=UDim.new(0,6)
+local function addTranscriptRow(snapshot)
+	local row=Instance.new("Frame",txListScroll); row.Size=UDim2.new(1,0,0,54); row.BackgroundColor3=C.BG3; corner(row,7); stroke(row,C.BORDER,1)
+	local idLbl=Instance.new("TextLabel",row); idLbl.Size=UDim2.new(1,-84,0,18); idLbl.Position=UDim2.fromOffset(8,4)
+	idLbl.BackgroundTransparency=1; idLbl.Text=snapshot.id; idLbl.Font=Enum.Font.GothamBold; idLbl.TextSize=11
+	idLbl.TextColor3=C.ACCENT; idLbl.TextXAlignment=Enum.TextXAlignment.Left
+	local cntLbl=Instance.new("TextLabel",row); cntLbl.Size=UDim2.new(1,-84,0,14); cntLbl.Position=UDim2.fromOffset(8,24)
+	cntLbl.BackgroundTransparency=1; cntLbl.Text=tostring(#snapshot.entries).." messages  "..snapshot.time
+	cntLbl.Font=Enum.Font.Gotham; cntLbl.TextSize=10; cntLbl.TextColor3=C.SUBTEXT; cntLbl.TextXAlignment=Enum.TextXAlignment.Left
+	local copyBtn=Instance.new("TextButton",row); copyBtn.Size=UDim2.fromOffset(68,28); copyBtn.Position=UDim2.new(1,-74,0.5,-14)
+	copyBtn.BackgroundColor3=C.ACCENT2; copyBtn.Text="Copy"; copyBtn.Font=Enum.Font.GothamBold
+	copyBtn.TextSize=11; copyBtn.TextColor3=C.WHITE; copyBtn.AutoButtonColor=false; corner(copyBtn,6); hoverFX(copyBtn,C.ACCENT2,C.ACCENT)
+	copyBtn.MouseButton1Click:Connect(function()
+		local lines={"GROQ CHAT TRANSCRIPT -- "..snapshot.id,"Saved: "..snapshot.time,"Messages: "..tostring(#snapshot.entries),string.rep("=",44),""}
+		for _,e in ipairs(snapshot.entries) do
+			local who=e.kind=="ai" and "[Groq]" or e.kind=="sys" and "[System]" or "["..e.speaker.."]"
+			table.insert(lines,"["..e.time.."] "..who); table.insert(lines,e.message); table.insert(lines,"")
+		end
+		local txt=table.concat(lines,"\n")
+		local ok=pcall(function() if setclipboard then setclipboard(txt) elseif Clipboard then Clipboard.set(txt) end end)
+		if ok then copyBtn.Text="Copied!"; copyBtn.TextColor3=C.SUCCESS
+			task.delay(2,function() if copyBtn.Parent then copyBtn.Text="Copy"; copyBtn.TextColor3=C.WHITE end end)
+		else copyBtn.Text="N/A" end
+	end)
+	txStatusLbl.Text=tostring(#ai_transcripts).." transcript"..(#ai_transcripts==1 and "" or "s").." saved."
+end
+txSnapBtn.MouseButton1Click:Connect(function()
+	if #ai_liveLog==0 then txStatusLbl.Text="Nothing in log yet!"; return end
+	local entries={}
+	for _,e in ipairs(ai_liveLog) do table.insert(entries,{kind=e.kind,speaker=e.speaker,message=e.message,time=e.time}) end
+	local snapshot={id=genId(),entries=entries,time=ai_ts()}
+	table.insert(ai_transcripts,snapshot); addTranscriptRow(snapshot)
+	txSnapBtn.Text="[OK] Saved - "..snapshot.id
+	task.delay(2,function() if txSnapBtn.Parent then txSnapBtn.Text="[+] Snapshot Current Log" end end)
+end)
+aiTxBtn.MouseButton1Click:Connect(function() TxPanel.Visible=not TxPanel.Visible end)
+end -- scope
+
+do -- scope TUTORIAL PANEL
+local TUTORIAL_STEPS={
+	{title="Welcome to Groq AI Chat!",   body="This tab lets an AI automatically reply to Roblox chat messages using Groq's free API.\n\nUse Next to walk through the 6-step setup."},
+	{title="Step 1 - Visit console.groq.com", body="Open your browser and go to:\n\nconsole.groq.com\n\nGroq is completely FREE. No credit card needed. Takes about 30 seconds to sign up."},
+	{title="Step 2 - Create a free account",  body="Click Sign Up on the Groq console.\n\nYou can use Google, GitHub, or Email.\n\nIt only takes about 30 seconds."},
+	{title="Step 3 - Create an API Key",      body="Once logged in, click 'API Keys' in the left sidebar.\n\nClick '+ Create API Key', give it any name (e.g. Roblox), then copy the key.\n\nSave it -- Groq only shows it once!"},
+	{title="Step 4 - Paste your key",         body="Paste the key (starts with gsk_...) into the API KEY box at the top of this tab.\n\nClick HIDE to mask it so nobody can see it over your shoulder."},
+	{title="Step 5 - Pick a model",            body="Click the AI MODEL dropdown and choose.\n\nKimi K2 and GPT-OSS 120B are the smartest.\nLlama 3.1 8B is fastest.\n\nStart with Kimi K2."},
+	{title="Step 6 - Enable Auto-Respond",    body="Flip the Auto-Respond toggle ON.\n\nBy default players type '!ai' before their message to get a reply.\n\nToggle 'Respond to ALL' to reply to every message instead."},
+	{title="You're all set!",                 body="That's it!\n\nUse Transcripts to snapshot and copy your conversation logs.\n\nThe system prompt box lets you change the AI's personality any time."},
+}
+local TutPanel=Instance.new("Frame",ScreenGui); TutPanel.Size=UDim2.fromOffset(290,250)
+TutPanel.Position=UDim2.new(0.62-0.3,0,0.18,0); TutPanel.BackgroundColor3=C.BG; TutPanel.Visible=false
+TutPanel.ClipsDescendants=true; TutPanel.ZIndex=40; corner(TutPanel,12); stroke(TutPanel,C.YELLOW,2)
+local tutHdr=Instance.new("Frame",TutPanel); tutHdr.Size=UDim2.new(1,0,0,38); tutHdr.BackgroundColor3=C.BG2
+corner(tutHdr,10); stroke(tutHdr,C.BORDER,1)
+local tutStepLbl=Instance.new("TextLabel",tutHdr); tutStepLbl.Size=UDim2.new(0,50,1,0); tutStepLbl.Position=UDim2.fromOffset(8,0)
+tutStepLbl.BackgroundTransparency=1; tutStepLbl.Text="1/8"; tutStepLbl.Font=Enum.Font.GothamBold
+tutStepLbl.TextSize=10; tutStepLbl.TextColor3=C.YELLOW; tutStepLbl.TextXAlignment=Enum.TextXAlignment.Left
+local tutTitleLbl=Instance.new("TextLabel",tutHdr); tutTitleLbl.Size=UDim2.new(1,-110,1,0); tutTitleLbl.Position=UDim2.fromOffset(52,0)
+tutTitleLbl.BackgroundTransparency=1; tutTitleLbl.Text="Tutorial"; tutTitleLbl.Font=Enum.Font.GothamBold
+tutTitleLbl.TextSize=12; tutTitleLbl.TextColor3=C.WHITE; tutTitleLbl.TextXAlignment=Enum.TextXAlignment.Left
+tutTitleLbl.TextTruncate=Enum.TextTruncate.AtEnd
+local tutCloseBtn=Instance.new("TextButton",tutHdr); tutCloseBtn.Size=UDim2.fromOffset(28,24)
+tutCloseBtn.Position=UDim2.new(1,-34,0.5,-12); tutCloseBtn.BackgroundColor3=C.DANGER; tutCloseBtn.Text="X"
+tutCloseBtn.Font=Enum.Font.GothamBold; tutCloseBtn.TextSize=12; tutCloseBtn.TextColor3=C.WHITE; tutCloseBtn.AutoButtonColor=false; corner(tutCloseBtn,5)
+tutCloseBtn.MouseButton1Click:Connect(function() TutPanel.Visible=false end)
+local tutBodyLbl=Instance.new("TextLabel",TutPanel); tutBodyLbl.Size=UDim2.new(1,-16,0,140)
+tutBodyLbl.Position=UDim2.fromOffset(8,46); tutBodyLbl.BackgroundTransparency=1; tutBodyLbl.Text=""
+tutBodyLbl.Font=Enum.Font.Gotham; tutBodyLbl.TextSize=11; tutBodyLbl.TextColor3=C.TEXT
+tutBodyLbl.TextXAlignment=Enum.TextXAlignment.Left; tutBodyLbl.TextYAlignment=Enum.TextYAlignment.Top; tutBodyLbl.TextWrapped=true
+local tutProgBar=Instance.new("Frame",TutPanel); tutProgBar.Size=UDim2.new(1,-100,0,4)
+tutProgBar.Position=UDim2.new(0,8,1,-36); tutProgBar.BackgroundColor3=C.BG3; corner(tutProgBar,2)
+local tutProgFill=Instance.new("Frame",tutProgBar); tutProgFill.Size=UDim2.new(0,0,1,0); tutProgFill.BackgroundColor3=C.YELLOW; corner(tutProgFill,2)
+local tutPrevBtn=Instance.new("TextButton",TutPanel); tutPrevBtn.Size=UDim2.fromOffset(70,26)
+tutPrevBtn.Position=UDim2.new(1,-168,1,-34); tutPrevBtn.BackgroundColor3=C.BG3; tutPrevBtn.Text="<< Back"
+tutPrevBtn.Font=Enum.Font.GothamBold; tutPrevBtn.TextSize=10; tutPrevBtn.TextColor3=C.SUBTEXT; tutPrevBtn.AutoButtonColor=false; corner(tutPrevBtn,6)
+local tutNextBtn=Instance.new("TextButton",TutPanel); tutNextBtn.Size=UDim2.fromOffset(86,26)
+tutNextBtn.Position=UDim2.new(1,-94,1,-34); tutNextBtn.BackgroundColor3=C.YELLOW; tutNextBtn.Text="Next >>"
+tutNextBtn.Font=Enum.Font.GothamBold; tutNextBtn.TextSize=10; tutNextBtn.TextColor3=Color3.fromRGB(10,10,10); tutNextBtn.AutoButtonColor=false; corner(tutNextBtn,6)
+local tutStep=1
+local function showTutStep(n)
+	tutStep=math.clamp(n,1,#TUTORIAL_STEPS); local s=TUTORIAL_STEPS[tutStep]
+	tutStepLbl.Text=tutStep.."/"..#TUTORIAL_STEPS; tutTitleLbl.Text=s.title; tutBodyLbl.Text=s.body
+	tutPrevBtn.Visible=tutStep>1
+	if tutStep==#TUTORIAL_STEPS then tutNextBtn.Text="Done!"; tutNextBtn.BackgroundColor3=C.SUCCESS
+	else tutNextBtn.Text="Next >>"; tutNextBtn.BackgroundColor3=C.YELLOW end
+	local pct=tutStep>1 and (tutStep-1)/(#TUTORIAL_STEPS-1) or 0
+	tw(tutProgFill,{Size=UDim2.new(pct,0,1,0)})
+end
+tutNextBtn.MouseButton1Click:Connect(function()
+	if tutStep>=#TUTORIAL_STEPS then TutPanel.Visible=false else showTutStep(tutStep+1) end
+end)
+tutPrevBtn.MouseButton1Click:Connect(function() showTutStep(tutStep-1) end)
+aiTutBtn.MouseButton1Click:Connect(function() showTutStep(1); TutPanel.Visible=true end)
+showTutStep(1)
+end -- scope
+
+-- ── QUEUE + CHAT HANDLER ─────────────────────────────────
+local ai_playerLastSent={}; local ai_messageQueue={}; local ai_queueRunning=false
+local ai_groqPaused=false; local ai_groqRetryAt=0
+
+local function ai_sendRobloxChat(targetUsername,reply)
+	if not ai_canSendRobloxChat() then
+		task.spawn(function() while not ai_canSendRobloxChat() do task.wait(1) end; ai_sendRobloxChat(targetUsername,reply) end); return
+	end
+	local r=reply; if #r>0 then r=r:sub(1,1):lower()..r:sub(2) end
+	local msg="[AI]: "..targetUsername..", "..r; if #msg>200 then msg=msg:sub(1,197).."..." end
+	task.spawn(function()
+		local ok=pcall(function()
+			local tcs=game:GetService("TextChatService"); local ch=tcs.TextChannels:FindFirstChild("RBXGeneral")
+			if ch then ch:SendAsync(msg); ai_recordSend() end
+		end)
+		if not ok then
+			task.wait(3)
+			pcall(function()
+				local tcs=game:GetService("TextChatService"); local ch=tcs.TextChannels:FindFirstChild("RBXGeneral")
+				if ch then ch:SendAsync(msg); ai_recordSend() end
+			end)
+		end
+	end)
+end
+
+local function ai_processQueue()
+	if ai_queueRunning then return end; ai_queueRunning=true
+	task.spawn(function()
+		while #ai_messageQueue>0 do
+			while ai_groqPaused do task.wait(1) end
+			local item=table.remove(ai_messageQueue,1); local player=item.player; local message=item.message; local uid=player.UserId
+			if ai_playerLastSent[uid] then local w=AI_COOLDOWN-(tick()-ai_playerLastSent[uid]); if w>0 then task.wait(w) end end
+			ai_addLog(player.Name,message,"user")
+			if aiFooter.Parent then aiFooter.Text=player.Name..": "..message:sub(1,40) end
+			local reply,err=ai_callGroq(item.apiKey,item.sysPrompt,uid,player.Name,message)
+			ai_playerLastSent[uid]=tick()
+			if reply then
+				if ai_hasBad(reply) then reply = AI_BLOCKED end
+				ai_addLog("Groq",reply,"ai")
+				if aiFooter.Parent then aiFooter.Text="Replied to "..player.Name.."." end
+				if ai_getSendChat() then ai_sendRobloxChat(player.Name,reply) end
+			elseif err=="RATE_LIMITED" then
+				ai_addLog("","Rate limited. Pausing 60s.","sys"); ai_groqPaused=true; ai_groqRetryAt=tick()+60
+				table.insert(ai_messageQueue,1,item)
+				task.spawn(function()
+					while ai_groqPaused do local r2=math.ceil(ai_groqRetryAt-tick()); if r2<=0 then break end
+						if aiFooter.Parent then aiFooter.Text="Rate limited. Resuming in "..r2.."s." end; task.wait(1)
+					end; ai_groqPaused=false; if aiFooter.Parent then aiFooter.Text="Resumed." end
+				end)
+			elseif err=="BAD_KEY" then
+				ai_addLog("","Invalid API key.","sys"); if aiFooter.Parent then aiFooter.Text="Bad API key." end; break
+			else ai_addLog("","Error: "..tostring(err),"sys") end
+			task.wait(0.5)
+		end
+		ai_queueRunning=false; if aiFooter.Parent then aiFooter.Text="Waiting for messages." end
+	end)
+end
+
+local function ai_handleChat(player,message)
+	if not ai_getAutoRespond() then return end
+	if player==LocalPlayer and not ai_getRespondSelf() then return end
+	local apiKey=aiKeyBox.Text
+	if apiKey=="" then ai_addLog("","No API key set.","sys"); return end
+	if not ai_getRespondAll() then
+		local trigger=aiTrigBox.Text:lower():gsub("%s+","")
+		if trigger~="" and not message:lower():find(trigger,1,true) then return end
+	end
+	if ai_block(message) then
+		ai_addLog(player.Name,message,"user"); ai_addLog("Groq",AI_BLOCKED,"ai")
+		if ai_getSendChat() then ai_sendRobloxChat(player.Name,AI_BLOCKED) end; return
+	end
+	table.insert(ai_messageQueue,{player=player,message=message,apiKey=apiKey,sysPrompt=aiSysBox.Text,userId=player.UserId})
+	ai_processQueue()
+end
+
+local function ai_hookPlayer(p) _reg(p.Chatted:Connect(function(msg) ai_handleChat(p,msg) end)) end
+for _,p in ipairs(Players:GetPlayers()) do ai_hookPlayer(p) end
+_reg(Players.PlayerAdded:Connect(ai_hookPlayer))
+
+-- =========================================================
+-- TAB SWITCHING
+-- =========================================================
+local function switchTab(showFrame,btn,x)
+	TeleportFrame.Visible=false; FlyFrame.Visible=false; MiscFrame.Visible=false
+	ScriptsFrame.Visible=false; AIFrame.Visible=false; showFrame.Visible=true; setActiveTab(btn,x)
+end
+TeleportTab.MouseButton1Click:Connect(function() switchTab(TeleportFrame,TeleportTab,0*TAB_W) end)
+FlyTab.MouseButton1Click:Connect(function() switchTab(FlyFrame,FlyTab,1*TAB_W) end)
+MiscTab.MouseButton1Click:Connect(function() switchTab(MiscFrame,MiscTab,2*TAB_W) end)
+ScriptsTab.MouseButton1Click:Connect(function() switchTab(ScriptsFrame,ScriptsTab,3*TAB_W) end)
+AITab.MouseButton1Click:Connect(function() switchTab(AIFrame,AITab,4*TAB_W) end)
+setActiveTab(TeleportTab,0)
+
+-- =========================================================
+-- HIDE NOTIFICATION
+-- =========================================================
+local Notification=Instance.new("Frame",ScreenGui); Notification.Size=UDim2.fromOffset(270,60)
+Notification.Position=UDim2.fromScale(0.67,0.82); Notification.BackgroundColor3=C.BG2; Notification.Visible=false
+corner(Notification,10); stroke(Notification,C.BORDER,1); pad(Notification,8,8,12,12)
+local NotifLabel=Instance.new("TextLabel",Notification); NotifLabel.Size=UDim2.new(1,-32,1,0)
+NotifLabel.BackgroundTransparency=1; NotifLabel.Text="UI hidden  -  RShift or Left Alt to show"
+NotifLabel.TextScaled=true; NotifLabel.TextColor3=C.TEXT; NotifLabel.Font=Enum.Font.Gotham; NotifLabel.TextWrapped=true
+local NotifClose=Instance.new("TextButton",Notification); NotifClose.Size=UDim2.fromOffset(22,22)
+NotifClose.Position=UDim2.new(1,-26,0,4); NotifClose.Text="X"; NotifClose.Font=Enum.Font.GothamBold
+NotifClose.TextSize=12; NotifClose.TextColor3=C.WHITE; NotifClose.BackgroundColor3=C.DANGER; NotifClose.AutoButtonColor=false; corner(NotifClose,5)
+NotifClose.MouseButton1Click:Connect(function() Notification.Visible=false end)
+
+-- =========================================================
+-- MINIMIZE / CLOSE
+-- =========================================================
+local uiVisible=true
+MinimizeBtn.MouseButton1Click:Connect(function()
+	if not uiVisible then return end; uiVisible=false; play(MinimizeSound); play(NotifSound)
+	MainFrame.Visible=false; Notification.Visible=true
+end)
+CloseBtn.MouseButton1Click:Connect(function()
+	stopFly(); stopAntiFling(); StopFloat(); stopInvis()
+	looping=false; orbiting=false; espEnabled=false; clearESP()
+	local hum=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+	if hum then hum.PlatformStand=false end
+	_killAll()
+	pcall(function() ScreenGui:Destroy() end)
+end)
+_reg(UserInputService.InputBegan:Connect(function(input,gp)
+	local isUiKey=input.KeyCode==Enum.KeyCode.RightShift or input.KeyCode==Enum.KeyCode.LeftAlt
+	local isFlyKey=input.KeyCode==FLY_TOGGLE_KEY
+	if gp and not(isUiKey or isFlyKey) then return end
+	if isTyping() then return end
+	if isUiKey then
+		uiVisible=not uiVisible; MainFrame.Visible=uiVisible; Notification.Visible=not uiVisible
+		if not uiVisible then play(MinimizeSound); play(NotifSound) end; return
+	end
+	if isFlyKey and not SCRIPT_CLOSED then
+		if flying then stopFly(); FlyBtn.Text="[^] Start Flying"; FlyBtn.BackgroundColor3=C.BG3
+		else startFly(); FlyBtn.Text="[S] Stop Flying"; FlyBtn.BackgroundColor3=C.ACCENT2 end
+	end
+end))
+
+-- =========================================================
+-- CHAT COMMANDS
+-- =========================================================
+local function findPlayerByName(partial)
+	partial=partial:lower()
+	for _,p in ipairs(Players:GetPlayers()) do if p~=LocalPlayer and p.Name:lower():sub(1,#partial)==partial then return p end end
+end
+_reg(LocalPlayer.Chatted:Connect(function(msg)
+	local a=msg:lower():split(" ")
+	if a[1]=="!fly" and not SCRIPT_CLOSED then
+		if a[2] then local n=tonumber(a[2]); if n then flySpeed=math.clamp(n,5,500); SpeedBox.Text=tostring(flySpeed) end end
+		startFly(); FlyBtn.Text="[S] Stop Flying"; FlyBtn.BackgroundColor3=C.ACCENT2
+	end
+	if a[1]=="!unfly" then stopFly(); FlyBtn.Text="[^] Start Flying"; FlyBtn.BackgroundColor3=C.BG3 end
+	if a[1]=="!loop" and a[2] then loopTarget=findPlayerByName(a[2]); looping=true end
+	if a[1]=="!unloop" then looping=false end
+	if a[1]=="!orbit" and a[2] then orbitTarget=findPlayerByName(a[2]); orbiting=true end
+	if a[1]=="!unorbit" then orbiting=false end
+	if a[1]=="!antifling" then antiFlingEnabled=true; startAntiFling(); AntiFlingBtn.Text="[AF] Anti-Fling: ON"; AntiFlingBtn.BackgroundColor3=C.SUCCESS end
+	if a[1]=="!unantifling" then antiFlingEnabled=false; stopAntiFling(); AntiFlingBtn.Text="[AF] Anti-Fling: OFF"; AntiFlingBtn.BackgroundColor3=C.BG3 end
+	if a[1]=="!esp" then espEnabled=true; clearESP(); for _,p in ipairs(Players:GetPlayers()) do applyHighlight(p) end; EspBtn.Text="[E] ESP: ON"; EspBtn.BackgroundColor3=C.ACCENT2 end
+	if a[1]=="!unesp" then espEnabled=false; clearESP(); EspBtn.Text="[E] ESP: OFF"; EspBtn.BackgroundColor3=C.BG3 end
+	if a[1]=="!rejoin" then TeleportService:Teleport(game.PlaceId,LocalPlayer) end
+	if a[1]=="!refresh" and LocalPlayer.Character then LocalPlayer.Character:BreakJoints() end
+	if a[1]=="!invis" then
+		if not invisEnabled then
+			startInvis()
+
+			if InvisBtn then
+				InvisBtn.Text="[I] Invis (G): ON"
+				InvisBtn.BackgroundColor3=C.SUCCESS
+			end
+		end
+	end
+
+	if a[1]=="!uninvis" then
+		if invisEnabled then
+			stopInvis()
+
+			if InvisBtn then
+				InvisBtn.Text="[I] Invis (G): OFF"
+				InvisBtn.BackgroundColor3=C.BG3
+			end
+		end
+	end
+	if a[1]=="!float" then
+		if not FloatEnabled then StartFloat(); FloatBtn.Text="[~] Float: ON"; FloatBtn.BackgroundColor3=C.ACCENT2 end
+	end
+	if a[1]=="!unfloat" then
+		if FloatEnabled then StopFloat(); FloatBtn.Text="[~] Float: OFF"; FloatBtn.BackgroundColor3=C.BG3 end
+	end
+end))
