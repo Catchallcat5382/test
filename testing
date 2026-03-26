@@ -400,15 +400,32 @@ KeyNote2.Text="Float: E = rise  |  Q = sink"; KeyNote2.TextWrapped=true
 corner(KeyNote2,8); stroke(KeyNote2,C.BORDER,1); pad(KeyNote2,6,6,10,8)
 
 -- =========================================================
--- INVISIBILITY SYSTEM (FULLY FIXED)
+-- INVISIBILITY SYSTEM (FULLY CLEANABLE)
 -- =========================================================
 
 local invisEnabled = false
 local invisSaved = {}
 local InvisBtn
-local invisConnection
+local invisConn
 
 local INVIS_ON = Color3.fromRGB(85,255,127)
+
+local function restoreTransparency()
+
+	for v,t in pairs(invisSaved) do
+		if v and v.Parent then
+			if v:IsA("BasePart") then
+				v.LocalTransparencyModifier = t
+			elseif v:IsA("Decal") then
+				v.Transparency = t
+			end
+		end
+	end
+
+	table.clear(invisSaved)
+
+end
+
 
 local function startInvis()
 
@@ -424,13 +441,14 @@ local function startInvis()
 		if v:IsA("BasePart") then
 			invisSaved[v] = v.LocalTransparencyModifier
 			v.LocalTransparencyModifier = 0.5
+
 		elseif v:IsA("Decal") then
 			invisSaved[v] = v.Transparency
 			v.Transparency = 0.5
 		end
 	end
 
-	invisConnection = RunService.Heartbeat:Connect(function()
+	invisConn = _reg(RunService.Heartbeat:Connect(function()
 
 		if not invisEnabled then return end
 
@@ -460,7 +478,7 @@ local function startInvis()
 		root.CFrame = current
 		humanoid.CameraOffset = offset
 
-	end)
+	end))
 
 end
 
@@ -468,24 +486,15 @@ end
 local function stopInvis()
 
 	if not invisEnabled then return end
+
 	invisEnabled = false
 
-	for v,t in pairs(invisSaved) do
-		if v and v.Parent then
-			if v:IsA("BasePart") then
-				v.LocalTransparencyModifier = t
-			else
-				v.Transparency = t
-			end
-		end
+	if invisConn then
+		invisConn:Disconnect()
+		invisConn = nil
 	end
 
-	table.clear(invisSaved)
-
-	if invisConnection then
-		invisConnection:Disconnect()
-		invisConnection = nil
-	end
+	restoreTransparency()
 
 end
 
@@ -514,10 +523,8 @@ local function toggleInvis()
 
 end
 
--- Keybind
-local invisKeyConn
-
-invisKeyConn = UserInputService.InputBegan:Connect(function(input,gpe)
+-- G key
+_reg(UserInputService.InputBegan:Connect(function(input,gpe)
 
 	if gpe then return end
 
@@ -525,10 +532,10 @@ invisKeyConn = UserInputService.InputBegan:Connect(function(input,gpe)
 		toggleInvis()
 	end
 
-end)
+end))
 
--- Respawn Fix
-LocalPlayer.CharacterAdded:Connect(function()
+-- Respawn cleanup
+_reg(LocalPlayer.CharacterAdded:Connect(function()
 
 	stopInvis()
 
@@ -537,7 +544,7 @@ LocalPlayer.CharacterAdded:Connect(function()
 		InvisBtn.BackgroundColor3 = C.BG3
 	end
 
-end)
+end))
 
 -- =========================================================
 -- MISC BUTTONS
@@ -1273,31 +1280,18 @@ end)
 
 CloseBtn.MouseButton1Click:Connect(function()
 
-	if stopFly then stopFly() end
-	if stopAntiFling then stopAntiFling() end
-	if StopFloat then StopFloat() end
-	if stopInvis then stopInvis() end
-	if toggleInvis then toggleInvis() end
+	stopInvis()
 
-	looping=false
-	orbiting=false
-	espEnabled=false
+	stopFly()
+	stopAntiFling()
 
-	if clearESP then
-		clearESP()
+	if StopFloat then
+		StopFloat()
 	end
 
-	local hum =
-	LocalPlayer.Character
-	and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+	clearESP()
 
-	if hum then
-		hum.PlatformStand=false
-	end
-
-	if _killAll then
-		_killAll()
-	end
+	_killAll()
 
 	pcall(function()
 		ScreenGui:Destroy()
