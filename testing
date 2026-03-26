@@ -400,164 +400,127 @@ KeyNote2.Text="Float: E = rise  |  Q = sink"; KeyNote2.TextWrapped=true
 corner(KeyNote2,8); stroke(KeyNote2,C.BORDER,1); pad(KeyNote2,6,6,10,8)
 
 -- =========================================================
--- INVISIBILITY SYSTEM (FULLY CLEANABLE)
+-- INVISIBILITY SYSTEM (FULL HARD STOP FIX)
 -- =========================================================
 
 local invisEnabled = false
 local invisSaved = {}
 local InvisBtn
-local invisConn
+local invisConn = nil
+local invisKeyConn = nil
 
 local INVIS_ON = Color3.fromRGB(85,255,127)
 
-local function restoreTransparency()
-
-	for v,t in pairs(invisSaved) do
-		if v and v.Parent then
-			if v:IsA("BasePart") then
-				v.LocalTransparencyModifier = t
-			elseif v:IsA("Decal") then
-				v.Transparency = t
-			end
-		end
-	end
-
-	table.clear(invisSaved)
-
-end
-
-
 local function startInvis()
+    if invisEnabled or SCRIPT_CLOSED then return end
+    
+    local char = LocalPlayer.Character
+    if not char then return end
+    
+    invisEnabled = true
+    table.clear(invisSaved)
 
-	if invisEnabled then return end
+    for _,v in ipairs(char:GetDescendants()) do
+        if v:IsA("BasePart") then
+            invisSaved[v] = v.LocalTransparencyModifier
+            v.LocalTransparencyModifier = 0.5
+        elseif v:IsA("Decal") then
+            invisSaved[v] = v.Transparency
+            v.Transparency = 0.5
+        end
+    end
 
-	local char = LocalPlayer.Character
-	if not char then return end
+    invisConn = RunService.Heartbeat:Connect(function()
+        if not invisEnabled or SCRIPT_CLOSED then return end
+        
+        local char = LocalPlayer.Character
+        if not char then return end
+        
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        local root = char:FindFirstChild("HumanoidRootPart")
 
-	invisEnabled = true
-	table.clear(invisSaved)
+        if not humanoid or not root then return end
 
-	for _,v in ipairs(char:GetDescendants()) do
-		if v:IsA("BasePart") then
-			invisSaved[v] = v.LocalTransparencyModifier
-			v.LocalTransparencyModifier = 0.5
+        local current = root.CFrame
+        local offset = humanoid.CameraOffset
 
-		elseif v:IsA("Decal") then
-			invisSaved[v] = v.Transparency
-			v.Transparency = 0.5
-		end
-	end
+        local new = current * CFrame.new(0,-2000,0)
+        local camOffset = new:ToObjectSpace(
+            CFrame.new(current.Position)
+        ).Position
 
-	local invisKeyConn
-	local invisConn
+        root.CFrame = new
+        humanoid.CameraOffset = camOffset
 
-	invisConn = _reg(RunService.Heartbeat:Connect(function()
+        RunService.RenderStepped:Wait()
 
-		if not invisEnabled then return end
+        root.CFrame = current
+        humanoid.CameraOffset = offset
+    end)
 
-		local char = LocalPlayer.Character
-		if not char then return end
-
-		local humanoid = char:FindFirstChildOfClass("Humanoid")
-		local root = char:FindFirstChild("HumanoidRootPart")
-
-		if not humanoid or not root then return end
-
-		local current = root.CFrame
-		local offset = humanoid.CameraOffset
-
-		local new = current * CFrame.new(0,-2000,0)
-
-		local camOffset =
-			new:ToObjectSpace(
-				CFrame.new(current.Position)
-			).Position
-
-		root.CFrame = new
-		humanoid.CameraOffset = camOffset
-
-		RunService.RenderStepped:Wait()
-
-		root.CFrame = current
-		humanoid.CameraOffset = offset
-
-	end))
-
+    _reg(invisConn)
 end
-
 
 local function stopInvis()
+    if not invisEnabled then return end
+    
+    invisEnabled = false
 
-	if not invisEnabled then return end
+    if invisConn then
+        invisConn:Disconnect()
+        invisConn = nil
+    end
 
-	invisEnabled = false
+    for v,t in pairs(invisSaved) do
+        if v and v.Parent then
+            if v:IsA("BasePart") then
+                v.LocalTransparencyModifier = t
+            else
+                v.Transparency = t
+            end
+        end
+    end
 
-	if invisConn then
-		pcall(function()
-			invisConn:Disconnect()
-		end)
-		invisConn = nil
-	end
-
-	for v,t in pairs(invisSaved) do
-		if v and v.Parent then
-			if v:IsA("BasePart") then
-				v.LocalTransparencyModifier = t
-			elseif v:IsA("Decal") then
-				v.Transparency = t
-			end
-		end
-	end
-
-	table.clear(invisSaved)
-
+    table.clear(invisSaved)
 end
 
 local function toggleInvis()
+    if invisEnabled then
+        stopInvis()
+    else
+        startInvis()
+    end
 
-	if invisEnabled then
-		stopInvis()
-	else
-		startInvis()
-	end
+    if InvisBtn then
+        InvisBtn.Text =
+            invisEnabled and "[I] Invis (G): ON"
+            or "[I] Invis (G): OFF"
 
-	if InvisBtn then
-		InvisBtn.Text =
-			invisEnabled and
-			"[I] Invis (G): ON"
-			or
-			"[I] Invis (G): OFF"
-
-		InvisBtn.BackgroundColor3 =
-			invisEnabled and
-			INVIS_ON
-			or
-			C.BG3
-	end
-
+        InvisBtn.BackgroundColor3 =
+            invisEnabled and INVIS_ON or C.BG3
+    end
 end
 
--- G key
-_reg(UserInputService.InputBegan:Connect(function(input,gpe)
+-- KEYBIND
+invisKeyConn = UserInputService.InputBegan:Connect(function(input,gpe)
+    if SCRIPT_CLOSED then return end
+    if gpe then return end
+    
+    if input.KeyCode == Enum.KeyCode.G then
+        toggleInvis()
+    end
+end)
 
-	if gpe then return end
+_reg(invisKeyConn)
 
-	if input.KeyCode == Enum.KeyCode.G then
-		toggleInvis()
-	end
-
-end))
-
--- Respawn cleanup
+-- RESPAWN FIX
 _reg(LocalPlayer.CharacterAdded:Connect(function()
-
-	stopInvis()
-
-	if InvisBtn then
-		InvisBtn.Text = "[I] Invis (G): OFF"
-		InvisBtn.BackgroundColor3 = C.BG3
-	end
-
+    stopInvis()
+    
+    if InvisBtn then
+        InvisBtn.Text = "[I] Invis (G): OFF"
+        InvisBtn.BackgroundColor3 = C.BG3
+    end
 end))
 
 -- =========================================================
@@ -1293,32 +1256,13 @@ MinimizeBtn.MouseButton1Click:Connect(function()
 end)
 
 CloseBtn.MouseButton1Click:Connect(function()
-
-	pcall(function()
-		stopInvis()
-	end)
-
-	if invisKeyConn then
-		pcall(function()
-			invisKeyConn:Disconnect()
-		end)
-	end
-
-	stopFly()
-	stopAntiFling()
-
-	if StopFloat then
-		StopFloat()
-	end
-
-	clearESP()
-
-	_killAll()
-
-	pcall(function()
-		ScreenGui:Destroy()
-	end)
-
+    stopInvis()
+    stopFly()
+    StopFloat()
+    
+    _killAll()
+    
+    ScreenGui:Destroy()
 end)
 
 _reg(UserInputService.InputBegan:Connect(function(input,gp)
