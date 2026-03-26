@@ -1263,14 +1263,41 @@ MinimizeBtn.MouseButton1Click:Connect(function()
 	if not uiVisible then return end; uiVisible=false; play(MinimizeSound); play(NotifSound)
 	MainFrame.Visible=false; Notification.Visible=true
 end)
+
 CloseBtn.MouseButton1Click:Connect(function()
-	stopFly(); stopAntiFling(); StopFloat(); stopInvis()
-	looping=false; orbiting=false; espEnabled=false; clearESP()
-	local hum=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-	if hum then hum.PlatformStand=false end
-	_killAll()
-	pcall(function() ScreenGui:Destroy() end)
+
+	if stopFly then stopFly() end
+	if stopAntiFling then stopAntiFling() end
+	if StopFloat then StopFloat() end
+	if stopInvis then stopInvis() end
+	if toggleInvis then toggleInvis() end
+
+	looping=false
+	orbiting=false
+	espEnabled=false
+
+	if clearESP then
+		clearESP()
+	end
+
+	local hum =
+	LocalPlayer.Character
+	and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+
+	if hum then
+		hum.PlatformStand=false
+	end
+
+	if _killAll then
+		_killAll()
+	end
+
+	pcall(function()
+		ScreenGui:Destroy()
+	end)
+
 end)
+
 _reg(UserInputService.InputBegan:Connect(function(input,gp)
 	local isUiKey=input.KeyCode==Enum.KeyCode.RightShift or input.KeyCode==Enum.KeyCode.LeftAlt
 	local isFlyKey=input.KeyCode==FLY_TOGGLE_KEY
