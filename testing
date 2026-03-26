@@ -400,12 +400,13 @@ KeyNote2.Text="Float: E = rise  |  Q = sink"; KeyNote2.TextWrapped=true
 corner(KeyNote2,8); stroke(KeyNote2,C.BORDER,1); pad(KeyNote2,6,6,10,8)
 
 -- =========================================================
--- INVISIBILITY SYSTEM
+-- INVISIBILITY SYSTEM (FULLY FIXED)
 -- =========================================================
 
 local invisEnabled = false
 local invisSaved = {}
 local InvisBtn
+local invisConnection
 
 local INVIS_ON = Color3.fromRGB(85,255,127)
 
@@ -429,29 +430,65 @@ local function startInvis()
 		end
 	end
 
+	invisConnection = RunService.Heartbeat:Connect(function()
+
+		if not invisEnabled then return end
+
+		local char = LocalPlayer.Character
+		if not char then return end
+
+		local humanoid = char:FindFirstChildOfClass("Humanoid")
+		local root = char:FindFirstChild("HumanoidRootPart")
+
+		if not humanoid or not root then return end
+
+		local current = root.CFrame
+		local offset = humanoid.CameraOffset
+
+		local new = current * CFrame.new(0,-2000,0)
+
+		local camOffset =
+			new:ToObjectSpace(
+				CFrame.new(current.Position)
+			).Position
+
+		root.CFrame = new
+		humanoid.CameraOffset = camOffset
+
+		RunService.RenderStepped:Wait()
+
+		root.CFrame = current
+		humanoid.CameraOffset = offset
+
+	end)
+
 end
+
 
 local function stopInvis()
 
 	if not invisEnabled then return end
-
 	invisEnabled = false
 
 	for v,t in pairs(invisSaved) do
 		if v and v.Parent then
-			
 			if v:IsA("BasePart") then
 				v.LocalTransparencyModifier = t
 			else
 				v.Transparency = t
 			end
-			
 		end
 	end
 
 	table.clear(invisSaved)
 
+	if invisConnection then
+		invisConnection:Disconnect()
+		invisConnection = nil
+	end
+
 end
+
 
 local function toggleInvis()
 
@@ -477,53 +514,23 @@ local function toggleInvis()
 
 end
 
--- Real invis loop
-RunService.Heartbeat:Connect(function()
-
-	if not invisEnabled then return end
-
-	local char = LocalPlayer.Character
-	if not char then return end
-
-	local humanoid = char:FindFirstChildOfClass("Humanoid")
-	local root = char:FindFirstChild("HumanoidRootPart")
-
-	if not humanoid or not root then return end
-
-	local current = root.CFrame
-	local offset = humanoid.CameraOffset
-
-	local new = current * CFrame.new(0,-2000,0)
-
-	local camOffset =
-		new:ToObjectSpace(
-			CFrame.new(current.Position)
-		).Position
-
-	root.CFrame = new
-	humanoid.CameraOffset = camOffset
-
-	RunService.RenderStepped:Wait()
-
-	root.CFrame = current
-	humanoid.CameraOffset = offset
-
-end)
-
 -- Keybind
-UserInputService.InputBegan:Connect(function(input,gpe)
+local invisKeyConn
+
+invisKeyConn = UserInputService.InputBegan:Connect(function(input,gpe)
+
 	if gpe then return end
 
 	if input.KeyCode == Enum.KeyCode.G then
 		toggleInvis()
 	end
+
 end)
 
 -- Respawn Fix
 LocalPlayer.CharacterAdded:Connect(function()
 
-	invisEnabled = false
-	table.clear(invisSaved)
+	stopInvis()
 
 	if InvisBtn then
 		InvisBtn.Text = "[I] Invis (G): OFF"
