@@ -400,30 +400,6 @@ KeyNote2.Text="Float: E = rise  |  Q = sink"; KeyNote2.TextWrapped=true
 corner(KeyNote2,8); stroke(KeyNote2,C.BORDER,1); pad(KeyNote2,6,6,10,8)
 
 -- =========================================================
--- SAFE BUTTON CREATOR (Fix nil mkBtn error)
--- =========================================================
-
-if not mkBtn then
-	function mkBtn(parent,text,y,color)
-
-		local b = Instance.new("TextButton")
-		b.Size = UDim2.new(1,-10,0,36)
-		b.Position = UDim2.new(0,5,0,y)
-		b.BackgroundColor3 = color or Color3.fromRGB(45,45,45)
-		b.Text = text
-		b.Font = Enum.Font.GothamBold
-		b.TextSize = 14
-		b.TextColor3 = Color3.fromRGB(255,255,255)
-		b.Parent = parent
-
-		local corner = Instance.new("UICorner",b)
-		corner.CornerRadius = UDim.new(0,8)
-
-		return b
-	end
-end
-
--- =========================================================
 -- INVISIBILITY SYSTEM
 -- =========================================================
 
@@ -652,6 +628,7 @@ miscBtn("[+] Refresh Character",C.BG3,function()
 	end
 end)
 
+-- Server Hop
 -- Server Hop
 miscBtn("[W] Server Hop",C.BG3,function()
 
