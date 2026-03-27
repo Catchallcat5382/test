@@ -1320,6 +1320,33 @@ _reg(LocalPlayer.Chatted:Connect(function(msg)
 	if a[1]=="!unantifling" then antiFlingEnabled=false; stopAntiFling(); AntiFlingBtn.Text="[AF] Anti-Fling: OFF"; AntiFlingBtn.BackgroundColor3=C.BG3 end
 	if a[1]=="!esp" then espEnabled=true; clearESP(); for _,p in ipairs(Players:GetPlayers()) do applyHighlight(p) end; EspBtn.Text="[E] ESP: ON"; EspBtn.BackgroundColor3=C.ACCENT2 end
 	if a[1]=="!unesp" then espEnabled=false; clearESP(); EspBtn.Text="[E] ESP: OFF"; EspBtn.BackgroundColor3=C.BG3 end
+		if a[1]=="!invis" then
+		if not invisEnabled then
+			startInvis()
+
+			if InvisBtn then
+				InvisBtn.Text="[I] Invis (G): ON"
+				InvisBtn.BackgroundColor3=C.SUCCESS
+			end
+		end
+	end
+
+	if a[1]=="!uninvis" then
+		if invisEnabled then
+			stopInvis()
+
+			if InvisBtn then
+				InvisBtn.Text="[I] Invis (G): OFF"
+				InvisBtn.BackgroundColor3=C.BG3
+			end
+		end
+	end
+	if a[1]=="!float" then
+		if not FloatEnabled then StartFloat(); FloatBtn.Text="[~] Float: ON"; FloatBtn.BackgroundColor3=C.ACCENT2 end
+	end
+	if a[1]=="!unfloat" then
+		if FloatEnabled then StopFloat(); FloatBtn.Text="[~] Float: OFF"; FloatBtn.BackgroundColor3=C.BG3 end
+	end
 	if a[1]=="!rejoin" then TeleportService:Teleport(game.PlaceId,LocalPlayer) end
 	if a[1]=="!refresh" and LocalPlayer.Character then LocalPlayer.Character:BreakJoints() end
 end))
