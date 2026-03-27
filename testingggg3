@@ -28,6 +28,8 @@ local FloatEnabled = false
 local LockedY    = nil
 local HoldingE   = false
 local HoldingQ   = false
+local FLOAT_KEY = Enum.KeyCode.X -- new keybind for float
+local FloatHeight = 5 -- height above the ground
 
 -- ── SHUTDOWN SYSTEM ───────────────────────────────────────
 -- Every RunService / event connection goes through _reg() so
@@ -322,6 +324,30 @@ local function UpdateFloat()
 	FloatPart.Position = Vector3.new(HRP.Position.X, LockedY, HRP.Position.Z)
 end
 
+local function enableFloat()
+    if FloatEnabled then return end
+    local character = LocalPlayer.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+
+    FloatPart = Instance.new("Part")
+    FloatPart.Size = Vector3.new(6,1,6)
+    FloatPart.Anchored = true
+    FloatPart.CanCollide = false
+    FloatPart.Transparency = 1
+    FloatPart.Position = character.HumanoidRootPart.Position - Vector3.new(0, FloatHeight, 0)
+    FloatPart.Parent = workspace
+
+    FloatEnabled = true
+end
+
+local function disableFloat()
+    if FloatPart then
+        FloatPart:Destroy()
+        FloatPart = nil
+    end
+    FloatEnabled = false
+end
+
 local function StartFloat()
 	if FloatEnabled then return end
 	FloatEnabled = true
@@ -343,7 +369,24 @@ local function StopFloat()
 	if FloatPart then FloatPart:Destroy(); FloatPart = nil end
 end
 
-RunService.RenderStepped:Connect(UpdateFloat)
+RunService.RenderStepped:Connect(function()
+    if FloatEnabled and FloatPart and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        local hrp = LocalPlayer.Character.HumanoidRootPart
+        FloatPart.Position = hrp.Position - Vector3.new(0, FloatHeight, 0)
+        hrp.CFrame = CFrame.new(FloatPart.Position + Vector3.new(0, FloatHeight, 0))
+    end
+end)
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == FLOAT_KEY then
+        if FloatEnabled then
+            disableFloat()
+        else
+            enableFloat()
+        end
+    end
+end)
 
 _reg(LocalPlayer.CharacterAdded:Connect(function(char)
 	Character = char
