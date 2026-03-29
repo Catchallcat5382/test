@@ -23,11 +23,7 @@ local Config = {
     ESP_DeadCheck = false,
     ESP_MaxDist = 1500,
     ESP_Chams = false,
-	ESP_Highlight = false,
-	ESP_HighlightFill = 0.6,
-	ESP_HighlightOutline = 0,
     ESP_TeamCheck = false,
-    ESP_Rainbow = false,
     AIM_Enabled = false,
     AIM_FOV = 250,
     AIM_Smooth = 0.08,
@@ -39,14 +35,12 @@ local Config = {
     AIM_Dynamic = true,
     AIM_Sticky = true,
     AIM_Deadzone = 0,
-    FOV_Rainbow = false,
     MISC_Noclip = false,
     MISC_FullBright = false,
     MENU_Open = false,
     MENU_Tab = 1,
     MISC_Performance = false,
     RADAR_Enabled = true,
-	ESP_DeadCheck = true,
 }
 
 local Tuning = {
@@ -83,8 +77,6 @@ local Palette = {
     DragHandle  = Color3.fromRGB(38, 38, 52),
     DragDots    = Color3.fromRGB(120, 120, 145),
 }
-
-local RainbowHue = 0
 
 local State = {
     Unloaded   = false,
@@ -182,36 +174,6 @@ local function hookGunMod(taskKey)
 end
 
 local DeathTracker   = {}
-
-local DeathTracker = {}
-
-local function GetHumanoid(model)
-    return 
-        model:FindFirstChild("fpv_humanoid") or
-        model:FindFirstChild("Humanoid") or
-        model:FindFirstChildOfClass("Humanoid")
-end
-
-local function IsAlive(model)
-    if not model then return false end
-
-    local humanoid = GetHumanoid(model)
-
-    if not humanoid then
-        return false
-    end
-
-    if humanoid.Health <= 0 then
-        return false
-    end
-
-    if not humanoid.Parent then
-        return false
-    end
-
-    return true
-end
-
 local WeaponPatterns = {
     "upper_receiver","lower_receiver","receiver","barrel",
     "magazine","handguard","stock","slide","pump","grip",
@@ -219,7 +181,6 @@ local WeaponPatterns = {
 }
 local Connections   = {}
 local chamsObjects  = {}
-local highlightCache = {}
 local UI            = {}
 local Unload
 
@@ -235,43 +196,76 @@ if not UI.ScreenGui.Parent then
 end
 
 -- ─── DRAG HANDLE HELPER ──────────────────────────────────────────────────────
+-- Creates a white grab bar at the bottom of any frame.
+-- Returns the handle frame. Dragging it moves `targetFrame` freely.
+local function AttachDragHandle(targetFrame, handleH)
+    handleH = handleH or 14
 
--- ─── DRAG FRAME HELPER ──────────────────────────────────────────────────────
-local function MakeDraggable(targetFrame)
+    local handle = Instance.new("Frame")
+    handle.Name = "_DragHandle"
+    handle.BackgroundColor3 = Palette.DragHandle
+    handle.BorderSizePixel = 0
+    handle.Size = UDim2.new(1, 0, 0, handleH)
+    handle.Position = UDim2.new(0, 0, 1, -handleH)
+    handle.ZIndex = 50
+    handle.Parent = targetFrame
+    Instance.new("UICorner", handle).CornerRadius = UDim.new(0, 4)
+
+    -- Three dot grip indicator in the centre
+    local dots = Instance.new("TextLabel")
+    dots.BackgroundTransparency = 1
+    dots.Size = UDim2.new(1, 0, 1, 0)
+    dots.Font = Enum.Font.GothamBold
+    dots.TextSize = 11
+    dots.TextColor3 = Palette.DragDots
+    dots.TextXAlignment = Enum.TextXAlignment.Center
+    dots.TextYAlignment = Enum.TextYAlignment.Center
+    dots.Text = "· · · · ·"
+    dots.ZIndex = 51
+    dots.Parent = handle
+
+    -- Brighten on hover
+    handle.MouseEnter:Connect(function()
+        handle.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+        dots.TextColor3 = Color3.fromRGB(200, 200, 220)
+    end)
+    handle.MouseLeave:Connect(function()
+        handle.BackgroundColor3 = Palette.DragHandle
+        dots.TextColor3 = Palette.DragDots
+    end)
+
     local dragging = false
     local dragOffset = Vector2.zero
 
-    targetFrame.InputBegan:Connect(function(input)
+    handle.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1
         or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
-
-            local mouse = UserInputService:GetMouseLocation()
-            dragOffset = mouse - Vector2.new(
+            local m = UserInputService:GetMouseLocation()
+            dragOffset = m - Vector2.new(
                 targetFrame.AbsolutePosition.X,
                 targetFrame.AbsolutePosition.Y
             )
         end
     end)
 
-    targetFrame.InputEnded:Connect(function(input)
+    handle.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1
         or input.UserInputType == Enum.UserInputType.Touch then
             dragging = false
         end
     end)
 
-    RunService.RenderStepped:Connect(function()
+    -- We return a step function the main loop calls so dragging is smooth
+    local function step()
         if dragging then
-            local mouse = UserInputService:GetMouseLocation()
-            local newPos = mouse - dragOffset
-
-            targetFrame.Position = UDim2.new(
-                0, newPos.X,
-                0, newPos.Y
-            )
+            local m = UserInputService:GetMouseLocation()
+            local np = m - dragOffset
+            targetFrame.Position = UDim2.new(0, np.X, 0, np.Y)
         end
-    end)
+    end
+
+    return handle, step
 end
 
 -- ─── DEATH / WEAPON HELPERS ───────────────────────────────────────────────────
@@ -329,59 +323,26 @@ end
 local function IsModelDead(model)
     local root = model:FindFirstChild("HumanoidRootPart")
     if not root then return false end
-    
     local pos, now = root.Position, tick()
-    
     if not DeathTracker[model] then
-        DeathTracker[model] = {
-            lastPos=pos,
-            lastMoveTime=now,
-            wasActive=false,
-            isDead=false,
-            frozenTime=0,
-            knownWeapons=GetWeaponsNearby(pos,10),
-            lastWeaponCheck=now,
-            noMoveCount=0
-        }
+        DeathTracker[model] = {lastPos=pos,lastMoveTime=now,wasActive=false,isDead=false,frozenTime=0,knownWeapons=GetWeaponsNearby(pos,10),lastWeaponCheck=now}
         return false
     end
-    
     local d = DeathTracker[model]
     local delta = pos - d.lastPos
-    local horizontalMove = Vector3.new(delta.X, 0, delta.Z).Magnitude
-    local verticalMove = math.abs(delta.Y)
-    
-    -- More sensitive movement detection
-    local isMoving = horizontalMove > 0.05 or verticalMove > 0.1
-    
+    local isMoving = Vector3.new(delta.X,0,delta.Z).Magnitude > 0.08 or math.abs(delta.Y) > 0.15
     if isMoving then
-        d.lastMoveTime = now
-        d.wasActive = true
-        d.frozenTime = 0
-        d.noMoveCount = 0
-        d.knownWeapons = GetWeaponsNearby(pos, 10)
-        d.lastWeaponCheck = now
-        d.isDead = false
+        d.lastMoveTime = now d.wasActive = true d.frozenTime = 0
+        d.knownWeapons = GetWeaponsNearby(pos, 10) d.lastWeaponCheck = now d.isDead = false
     else
         d.frozenTime = now - d.lastMoveTime
-        d.noMoveCount = d.noMoveCount + 1
     end
-    
-    -- Check if dead: frozen for a bit AND (weapon appeared OR been frozen too long)
-    if not d.isDead and d.wasActive and d.frozenTime > 0.15 then
-        if now - d.lastWeaponCheck > 0.1 then
+    if not d.isDead and d.wasActive and d.frozenTime > 0.1 and d.frozenTime < 3.0 then
+        if now - d.lastWeaponCheck > 0.05 then
             d.lastWeaponCheck = now
-            if HasNewWeaponNearby(pos, d.knownWeapons, 8) then
-                d.isDead = true
-            end
-        end
-        
-        -- Fallback: if frozen for too long with no movement at all
-        if d.noMoveCount > 30 and d.frozenTime > 2.0 then
-            d.isDead = true
+            if HasNewWeaponNearby(pos, d.knownWeapons, 6) then d.isDead = true end
         end
     end
-    
     d.lastPos = pos
     return d.isDead
 end
@@ -417,10 +378,6 @@ local function IsHumanoidDead(model)
     return false
 end
 
-local function GetRainbowColor()
-    return Color3.fromHSV(RainbowHue, 1, 1)
-end
-
 local function GetEspColor()
     return Palette.Enemy
 end
@@ -450,20 +407,6 @@ function ESP.CreateDrawings(model)
         c.Visible = false c.Parent = UI.ScreenGui
         corners[i] = c
     end
-
-function ESP.CreateHighlight(model)
-    if highlightCache[model] then return end
-
-    local highlight = Instance.new("Highlight")
-    highlight.Adornee = model
-    highlight.Parent = game.CoreGui
-    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    highlight.FillTransparency = Config.ESP_HighlightFill
-    highlight.OutlineTransparency = Config.ESP_HighlightOutline
-
-    highlightCache[model] = highlight
-end
-
     local function newLabel(size, col)
         local t = Instance.new("TextLabel")
         t.BackgroundTransparency = 1
@@ -497,14 +440,6 @@ function ESP.Hide(esp)
     esp.Tracer.Visible = false esp.DeadX1.Visible = false esp.DeadX2.Visible = false
 end
 
-function ESP.HideHighlight(model)
-    local h = highlightCache[model]
-    if h then
-        h:Destroy()
-        highlightCache[model] = nil
-    end
-end
-
 function ESP.Destroy(esp)
     if not esp then return end
     pcall(function() esp.Box:Destroy() end)
@@ -522,7 +457,7 @@ function ESP.Render(esp, model, posData, cam, screenSize)
     local rs = cam:WorldToViewportPoint(posData.pos)
     if rs.Z <= 0 or rs.X < -100 or rs.X > screenSize.X+100 or rs.Y < -100 or rs.Y > screenSize.Y+100 then ESP.Hide(esp) return end
     local isDead = Config.ESP_DeadCheck and IsModelDead(model) or false
-    local baseCol = isDead and Palette.Dead or (Config.ESP_Rainbow and GetRainbowColor() or GetEspColor())
+    local baseCol = isDead and Palette.Dead or GetEspColor()
     local baseSize = 1200 / math.max(rs.Z, 1)
     local bH = math.clamp(baseSize, 25, screenSize.Y * 0.8)
     local bW = math.clamp(bH * Tuning.BoxRatio, 15, screenSize.X * 0.5)
@@ -580,24 +515,13 @@ function ESP.CachePositions()
     local myChar = LocalPlayer.Character
     local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
     local myPos  = myRoot and myRoot.Position or Vector3.zero
-
     ESP.posCache = {}
-
-    for _, model in pairs(workspace:GetDescendants()) do
-        if model.Name == "soldier_model" and model.Parent then
-
-            local cf, size = model:GetBoundingBox()
-
-            local top = cf.Position + Vector3.new(0, size.Y/2, 0)
-            local bottom = cf.Position - Vector3.new(0, size.Y/2, 0)
-
-            ESP.posCache[model] = {
-                top = top,
-                bottom = bottom,
-                cf = cf,
-                size = size
-            }
-
+    for _, model in ipairs(Workspace:GetChildren()) do
+        if model:IsA("Model") and model.Name == "soldier_model" and not IsLocalPlayer(model) then
+            local root = model:FindFirstChild("HumanoidRootPart")
+            if root then
+                ESP.posCache[model] = {pos=root.Position, dist=(root.Position-myPos).Magnitude}
+            end
         end
     end
 end
@@ -617,64 +541,21 @@ function ESP.Step(cam, screenSize)
     if State.Unloaded or not Config.ESP_Enabled then
         for _, esp in pairs(ESP.cache) do ESP.Hide(esp) end return
     end
-
     local now = tick()
     if now - ESP.lastCleanup > Tuning.CleanupRate then ESP.lastCleanup = now ESP.Cleanup() end
     if now - ESP.lastPosUpdate > Tuning.CacheRate then ESP.lastPosUpdate = now ESP.CachePositions() end
-
     local valid = {}
-
     for model, posData in pairs(ESP.posCache) do
-    if model and model.Parent then
-
-        local isDead = Config.ESP_DeadCheck and not IsAlive(model)
-
-        if isDead then
-            if ESP.cache[model] then
-                ESP.Hide(ESP.cache[model])
+        if model and model.Parent then
+            if Config.ESP_TeamCheck and model:FindFirstChild("friendly_marker") then
+                if ESP.cache[model] then ESP.Hide(ESP.cache[model]) end
+            else
+                valid[model] = true
+                if not ESP.cache[model] then ESP.CreateDrawings(model) end
+                ESP.Render(ESP.cache[model], model, posData, cam, screenSize)
             end
-
-        elseif Config.ESP_TeamCheck and model:FindFirstChild("friendly_marker") then
-            if ESP.cache[model] then
-                ESP.Hide(ESP.cache[model])
-            end
-
-        else
-            valid[model] = true
-
-			if Config.ESP_Highlight then
-			if not highlightCache[model] then
-				local highlight = Instance.new("Highlight")
-				highlight.Adornee = model
-				highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-				highlight.Parent = game.CoreGui
-				highlightCache[model] = highlight
-			end
-
-			local highlight = highlightCache[model]
-
-			if Config.Rainbow then
-				local col = Color3.fromHSV(tick()%5/5,1,1)
-				highlight.FillColor = col
-				highlight.OutlineColor = col
-			else
-				highlight.FillColor = Palette.Enemy
-				highlight.OutlineColor = Palette.Enemy
-			end
-		else
-			if highlightCache[model] then
-				highlightCache[model]:Destroy()
-				highlightCache[model] = nil
-			end
-		end
-
-            if not ESP.cache[model] then ESP.CreateDrawings(model) end
-            ESP.Render(ESP.cache[model], model, posData, cam, screenSize)
         end
-
     end
-end
-
     for model, esp in pairs(ESP.cache) do
         if not valid[model] then ESP.Hide(esp) end
     end
@@ -754,7 +635,7 @@ function Tracers.Step(cam, screenSize)
         local delta = target - origin
         local length = delta.Magnitude
         local angle = math.deg(math.atan2(delta.Y, delta.X)) - 90
-        t.Line.BackgroundColor3 = Config.ESP_Rainbow and GetRainbowColor() or Color3.fromRGB(255, 40, 40)
+        t.Line.BackgroundColor3 = Color3.fromRGB(255, 40, 40)
         t.Line.Position = UDim2.new(0, origin.X, 0, origin.Y)
         t.Line.Size = UDim2.new(0, 2, 0, length)
         t.Line.Rotation = angle
@@ -858,7 +739,7 @@ function AimAssist.Step(cam)
     if Config.AIM_ShowFOV then
         FOVCircle.Position = center
         FOVCircle.Radius = Config.AIM_FOV
-        FOVCircle.Color = Config.FOV_Rainbow and GetRainbowColor() or (State.Aiming and Palette.FOV_Active or Palette.FOV_Circle)
+        FOVCircle.Color = State.Aiming and Palette.FOV_Active or Palette.FOV_Circle
         FOVCircle.Visible = true
     else
         FOVCircle.Visible = false
@@ -1026,7 +907,8 @@ local radarDragStep = nil
 function Radar.Create()
     local container = Instance.new("Frame")
     container.Name = "RadarContainer"
-    container.Size = UDim2.new(0, RADAR_SIZE, 0, RADAR_SIZE)
+    -- Extra height at the bottom to accommodate the drag handle (14px)
+    container.Size = UDim2.new(0, RADAR_SIZE, 0, RADAR_SIZE + 14)
     container.Position = UDim2.new(1, -(RADAR_SIZE + RADAR_MARGIN), 1, -(RADAR_SIZE + 14 + RADAR_MARGIN))
     container.BackgroundColor3 = Palette.RadarBg
     container.BackgroundTransparency = 0.15
@@ -1125,7 +1007,9 @@ function Radar.Create()
     Radar.DirLine = dirLine
     Radar.DotPool = {}
 
-	MakeDraggable(container)
+    -- Attach drag handle — sits just below the radar area
+    local _, stepFn = AttachDragHandle(container, 14)
+    radarDragStep = stepFn
 end
 
 function Radar.GetOrCreateDot(idx)
@@ -1208,13 +1092,11 @@ local MenuItems = {
     {tab=2,name="Tracers",key="ESP_Tracer",type="toggle"},
     {tab=2,name="Distance",key="ESP_Distance",type="toggle"},
     {tab=2,name="Team Check",key="ESP_TeamCheck",type="toggle"},
-    {tab=2,name="Rainbow ESP",key="ESP_Rainbow",type="toggle"},
     {tab=2,name="Max Distance",key="ESP_MaxDist",type="slider",min=500,max=3000,step=100},
 
     {tab=1,name="AIMBOT",type="label"},
     {tab=1,name="Enabled",key="AIM_Enabled",type="toggle"},
     {tab=1,name="Show FOV Circle",key="AIM_ShowFOV",type="toggle"},
-    {tab=1,name="Rainbow FOV",key="FOV_Rainbow",type="toggle"},
     {tab=1,name="FOV Size",key="AIM_FOV",type="slider",min=50,max=600,step=10},
     {tab=1,name="Smoothness",key="AIM_Smooth",type="slider",min=0.01,max=1.0,step=0.01},
     {tab=1,name="Team Check",key="AIM_TeamCheck",type="toggle"},
@@ -1232,11 +1114,27 @@ local MenuItems = {
     {tab=3,name="No Spread",  key="GM_NoSpread",  type="gunmod", taskKey="INIT_FPV_SOL_FIREARM_SPREAD"},
 
     {tab=4, name="HOW TO USE", type="label"},
-    {tab=4, name="Aimbot: ", type="notes", text=[[Simply press Enabled and Teamcheck then choose your Smoothness. Less Smoothness = Better Accuracy]]},
-    {tab=4, name="ESP: ", type="notes", text=[[Enable your ESP and have fun! Recommened to have all enabled and distance set too max.]]},
-    {tab=4, name="MISC: ", type="notes", text=[[Under misc you can enable noclip, fullbright, radar, and much more!]]},
+    {tab=4, name="Aimbot: ", type="notes", text=[[
+
+
+Simply press Enabled and Teamcheck then choose your Smoothness. Less Smoothness = Better Accuracy
+    ]]},
+    {tab=4, name="ESP: ", type="notes", text=[[
+
+
+Enable your ESP and have fun! Recommened to have all enabled and distance set too max.
+    ]]},
+    {tab=4, name="MISC: ", type="notes", text=[[
+
+
+Under misc you can enable noclip, fullbright, radar, and much more!
+    ]]},
     {tab=4, name="CREDITS ", type="label"},
-    {tab=4, name="Credits Too: ", type="notes", text=[[Catchallcat5382]]},
+    {tab=4, name="Credits Too: ", type="notes", text=[[
+
+
+Catchallcat5382
+    ]]},
 }
 
 local GUI = {Frame=nil, Dragging=false, DragOffset=Vector2.zero, TabButtons={}, ContentFrame=nil, Items={}}
@@ -1457,66 +1355,66 @@ function GUI.Create()
         wrapper.Size = minimized and UDim2.new(0,W,0,titleH+HANDLE_H) or UDim2.new(0,W,0,H+HANDLE_H)
     end)
 
-   -- Small floating bottom drag handle
-local bottomHandle = Instance.new("Frame")
-bottomHandle.Name = "_MenuDragHandle"
-bottomHandle.BackgroundColor3 = Color3.fromRGB(196, 40, 28)
-bottomHandle.BorderSizePixel = 0
+    -- Bottom drag handle on the main frame (parented to wrapper so it sits below main)
+    local bottomHandle = Instance.new("Frame")
+    bottomHandle.Name = "_MenuDragHandle"
+    bottomHandle.BackgroundColor3 = Palette.DragHandle
+    bottomHandle.BorderSizePixel = 0
+    bottomHandle.Size = UDim2.new(1, 0, 0, HANDLE_H)
+    bottomHandle.Position = UDim2.new(0, 0, 1, -HANDLE_H)
+    bottomHandle.ZIndex = 50
+    bottomHandle.Parent = wrapper
+    Instance.new("UICorner", bottomHandle).CornerRadius = UDim.new(0, 4)
 
--- Smaller width + centered
-bottomHandle.Size = UDim2.new(0.35, 0, 0, 6)
-bottomHandle.AnchorPoint = Vector2.new(0.5, 1)
-bottomHandle.Position = UDim2.new(0.5, 0, 1, -6)
+    local dots = Instance.new("TextLabel")
+    dots.BackgroundTransparency = 1
+    dots.Size = UDim2.new(1, 0, 1, 0)
+    dots.Font = Enum.Font.GothamBold
+    dots.TextSize = 11
+    dots.TextColor3 = Palette.DragDots
+    dots.TextXAlignment = Enum.TextXAlignment.Center
+    dots.TextYAlignment = Enum.TextYAlignment.Center
+    dots.Text = "· · · · ·"
+    dots.ZIndex = 51
+    dots.Parent = bottomHandle
 
-bottomHandle.BackgroundTransparency = 0.6
-bottomHandle.ZIndex = 50
-bottomHandle.Parent = wrapper
+    bottomHandle.MouseEnter:Connect(function()
+        bottomHandle.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+        dots.TextColor3 = Color3.fromRGB(200, 200, 220)
+    end)
+    bottomHandle.MouseLeave:Connect(function()
+        bottomHandle.BackgroundColor3 = Palette.DragHandle
+        dots.TextColor3 = Palette.DragDots
+    end)
 
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(1, 0)
-corner.Parent = bottomHandle
+    local handleDragging = false
+    local handleOffset = Vector2.zero
 
+    bottomHandle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+            handleDragging = true
+            local m = UserInputService:GetMouseLocation()
+            handleOffset = m - Vector2.new(wrapper.AbsolutePosition.X, wrapper.AbsolutePosition.Y)
+        end
+    end)
+    bottomHandle.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+            handleDragging = false
+        end
+    end)
 
--- Drag Logic
-local handleDragging = false
-local handleOffset = Vector2.zero
-local targetPos = wrapper.Position
-
-bottomHandle.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-    or input.UserInputType == Enum.UserInputType.Touch then
-
-        handleDragging = true
-
-        local m = UserInputService:GetMouseLocation()
-        handleOffset = m - Vector2.new(
-            wrapper.AbsolutePosition.X,
-            wrapper.AbsolutePosition.Y
-        )
+    menuDragStep = function()
+        if handleDragging then
+            local m = UserInputService:GetMouseLocation()
+            local np = m - handleOffset
+            wrapper.Position = UDim2.new(0, np.X, 0, np.Y)
+        end
     end
-end)
 
-bottomHandle.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-    or input.UserInputType == Enum.UserInputType.Touch then
-        handleDragging = false
-    end
-end)
-
-menuDragStep = function()
-    if handleDragging then
-        local m = UserInputService:GetMouseLocation()
-        local np = m - handleOffset
-
-        targetPos = UDim2.new(0, np.X, 0, np.Y)
-    end
-
-    -- smooth movement
-    wrapper.Position = wrapper.Position:Lerp(targetPos, 0.2)
-end
-
-    GUI.UpdateTabs()
     GUI.UpdateContent()
+    GUI.UpdateTabs()
 end
 
 function GUI.UpdateTabs()
@@ -1529,7 +1427,7 @@ end
 
 function GUI.UpdateContent()
     for _, child in ipairs(GUI.ContentFrame:GetChildren()) do
-        if child:IsA("Frame") or child:IsA("TextButton") or child:IsA("ScrollingFrame") then child:Destroy() end
+        if child:IsA("Frame") or child:IsA("TextButton") then child:Destroy() end
     end
     GUI.Items = {}
     local order = 0
@@ -1540,7 +1438,7 @@ function GUI.UpdateContent()
         local isSlider = mi.type == "slider"
         local isGunMod = mi.type == "gunmod"
         local isNotes  = mi.type == "notes"
-        local itemH = isLabel and 22 or isSlider and 42 or isNotes and 80 or 26
+        local itemH = isLabel and 22 or isSlider and 42 or isNotes and 60 or 26
 
         local item = makeRound(GUI.ContentFrame, isLabel and Color3.fromRGB(10,10,14) or Palette.MenuPanel, 4)
         item.Name = mi.name
@@ -1695,20 +1593,10 @@ function GUI.UpdateContent()
                 end)
 
             elseif isNotes then
-                local scrollFrame = Instance.new("ScrollingFrame")
-                scrollFrame.BackgroundTransparency = 1
-                scrollFrame.Position = UDim2.new(0,10,0,5)
-                scrollFrame.Size = UDim2.new(1,-20,1,-10)
-                scrollFrame.CanvasSize = UDim2.new(0,0,0,0)
-                scrollFrame.ScrollBarThickness = 3
-                scrollFrame.ScrollBarImageColor3 = Palette.MenuAccent
-                scrollFrame.BorderSizePixel = 0
-                scrollFrame.Parent = item
-                
                 local text = Instance.new("TextLabel")
                 text.BackgroundTransparency = 1
-                text.Position = UDim2.new(0,0,0,0)
-                text.Size = UDim2.new(1,-8,0,0)
+                text.Position = UDim2.new(0,10,0,5)
+                text.Size = UDim2.new(1,-20,1,-10)
                 text.Font = Enum.Font.Gotham
                 text.TextSize = 11
                 text.TextColor3 = Palette.MenuTextDim
@@ -1716,12 +1604,7 @@ function GUI.UpdateContent()
                 text.TextYAlignment = Enum.TextYAlignment.Top
                 text.TextWrapped = true
                 text.Text = mi.text or "Notes"
-                text.AutomaticSize = Enum.AutomaticSize.Y
-                text.Parent = scrollFrame
-                
-                task.defer(function()
-                    scrollFrame.CanvasSize = UDim2.new(0,0,0,text.AbsoluteSize.Y + 5)
-                end)
+                text.Parent = item
             end
         end
 
@@ -1851,15 +1734,9 @@ end)
 
 Connections.render = RunService.RenderStepped:Connect(function()
     if State.Unloaded then return end
-
-    -- Rainbow update
-    RainbowHue = (RainbowHue + 0.001) % 1
-
     local cam = Workspace.CurrentCamera
     if not cam then return end
-
     local screenSize = cam.ViewportSize
-
     pcall(ApplyMisc)
     pcall(ApplyPerformance)
     pcall(Noclip.Step)
@@ -1868,17 +1745,11 @@ Connections.render = RunService.RenderStepped:Connect(function()
     pcall(GUI.Step)
     pcall(function() AimAssist.Step(cam) end)
     pcall(function() Tracers.Step(cam, screenSize) end)
-
     pcall(function()
         Radar.Enabled = Config.RADAR_Enabled
         Radar.Step(cam)
+        if radarDragStep then radarDragStep() end
     end)
-
-    -- Smooth Menu Drag
-    if menuDragStep then
-        menuDragStep()
-    end
-
 end)
 
 Radar.Create()
