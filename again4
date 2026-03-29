@@ -43,6 +43,7 @@ local Config = {
     MENU_Tab = 1,
     MISC_Performance = false,
     RADAR_Enabled = true,
+	ESP_DeadCheck = true,
 }
 
 local Tuning = {
@@ -178,6 +179,36 @@ local function hookGunMod(taskKey)
 end
 
 local DeathTracker   = {}
+
+local DeathTracker = {}
+
+local function GetHumanoid(model)
+    return 
+        model:FindFirstChild("fpv_humanoid") or
+        model:FindFirstChild("Humanoid") or
+        model:FindFirstChildOfClass("Humanoid")
+end
+
+local function IsAlive(model)
+    if not model then return false end
+
+    local humanoid = GetHumanoid(model)
+
+    if not humanoid then
+        return false
+    end
+
+    if humanoid.Health <= 0 then
+        return false
+    end
+
+    if not humanoid.Parent then
+        return false
+    end
+
+    return true
+end
+
 local WeaponPatterns = {
     "upper_receiver","lower_receiver","receiver","barrel",
     "magazine","handguard","stock","slide","pump","grip",
@@ -549,21 +580,37 @@ function ESP.Step(cam, screenSize)
     if State.Unloaded or not Config.ESP_Enabled then
         for _, esp in pairs(ESP.cache) do ESP.Hide(esp) end return
     end
+
     local now = tick()
     if now - ESP.lastCleanup > Tuning.CleanupRate then ESP.lastCleanup = now ESP.Cleanup() end
     if now - ESP.lastPosUpdate > Tuning.CacheRate then ESP.lastPosUpdate = now ESP.CachePositions() end
+
     local valid = {}
+
     for model, posData in pairs(ESP.posCache) do
-        if model and model.Parent then
-            if Config.ESP_TeamCheck and model:FindFirstChild("friendly_marker") then
-                if ESP.cache[model] then ESP.Hide(ESP.cache[model]) end
-            else
-                valid[model] = true
-                if not ESP.cache[model] then ESP.CreateDrawings(model) end
-                ESP.Render(ESP.cache[model], model, posData, cam, screenSize)
+    if model and model.Parent then
+
+        local isDead = Config.ESP_DeadCheck and not IsAlive(model)
+
+        if isDead then
+            if ESP.cache[model] then
+                ESP.Hide(ESP.cache[model])
             end
+
+        elseif Config.ESP_TeamCheck and model:FindFirstChild("friendly_marker") then
+            if ESP.cache[model] then
+                ESP.Hide(ESP.cache[model])
+            end
+
+        else
+            valid[model] = true
+            if not ESP.cache[model] then ESP.CreateDrawings(model) end
+            ESP.Render(ESP.cache[model], model, posData, cam, screenSize)
         end
+
     end
+end
+
     for model, esp in pairs(ESP.cache) do
         if not valid[model] then ESP.Hide(esp) end
     end
