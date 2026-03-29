@@ -23,6 +23,9 @@ local Config = {
     ESP_DeadCheck = false,
     ESP_MaxDist = 1500,
     ESP_Chams = false,
+	ESP_Highlight = false,
+	ESP_HighlightFill = 0.6,
+	ESP_HighlightOutline = 0,
     ESP_TeamCheck = false,
     ESP_Rainbow = false,
     AIM_Enabled = false,
@@ -216,6 +219,7 @@ local WeaponPatterns = {
 }
 local Connections   = {}
 local chamsObjects  = {}
+local highlightCache = {}
 local UI            = {}
 local Unload
 
@@ -446,6 +450,20 @@ function ESP.CreateDrawings(model)
         c.Visible = false c.Parent = UI.ScreenGui
         corners[i] = c
     end
+
+function ESP.CreateHighlight(model)
+    if highlightCache[model] then return end
+
+    local highlight = Instance.new("Highlight")
+    highlight.Adornee = model
+    highlight.Parent = game.CoreGui
+    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    highlight.FillTransparency = Config.ESP_HighlightFill
+    highlight.OutlineTransparency = Config.ESP_HighlightOutline
+
+    highlightCache[model] = highlight
+end
+
     local function newLabel(size, col)
         local t = Instance.new("TextLabel")
         t.BackgroundTransparency = 1
@@ -477,6 +495,14 @@ function ESP.Hide(esp)
     for _, c in ipairs(esp.Corners) do c.Visible = false end
     esp.Name.Visible = false esp.Dist.Visible = false
     esp.Tracer.Visible = false esp.DeadX1.Visible = false esp.DeadX2.Visible = false
+end
+
+function ESP.HideHighlight(model)
+    local h = highlightCache[model]
+    if h then
+        h:Destroy()
+        highlightCache[model] = nil
+    end
 end
 
 function ESP.Destroy(esp)
@@ -554,13 +580,24 @@ function ESP.CachePositions()
     local myChar = LocalPlayer.Character
     local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
     local myPos  = myRoot and myRoot.Position or Vector3.zero
+
     ESP.posCache = {}
-    for _, model in ipairs(Workspace:GetChildren()) do
-        if model:IsA("Model") and model.Name == "soldier_model" and not IsLocalPlayer(model) then
-            local root = model:FindFirstChild("HumanoidRootPart")
-            if root then
-                ESP.posCache[model] = {pos=root.Position, dist=(root.Position-myPos).Magnitude}
-            end
+
+    for _, model in pairs(workspace:GetDescendants()) do
+        if model.Name == "soldier_model" and model.Parent then
+
+            local cf, size = model:GetBoundingBox()
+
+            local top = cf.Position + Vector3.new(0, size.Y/2, 0)
+            local bottom = cf.Position - Vector3.new(0, size.Y/2, 0)
+
+            ESP.posCache[model] = {
+                top = top,
+                bottom = bottom,
+                cf = cf,
+                size = size
+            }
+
         end
     end
 end
@@ -604,6 +641,33 @@ function ESP.Step(cam, screenSize)
 
         else
             valid[model] = true
+
+			if Config.ESP_Highlight then
+			if not highlightCache[model] then
+				local highlight = Instance.new("Highlight")
+				highlight.Adornee = model
+				highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+				highlight.Parent = game.CoreGui
+				highlightCache[model] = highlight
+			end
+
+			local highlight = highlightCache[model]
+
+			if Config.Rainbow then
+				local col = Color3.fromHSV(tick()%5/5,1,1)
+				highlight.FillColor = col
+				highlight.OutlineColor = col
+			else
+				highlight.FillColor = Palette.Enemy
+				highlight.OutlineColor = Palette.Enemy
+			end
+		else
+			if highlightCache[model] then
+				highlightCache[model]:Destroy()
+				highlightCache[model] = nil
+			end
+		end
+
             if not ESP.cache[model] then ESP.CreateDrawings(model) end
             ESP.Render(ESP.cache[model], model, posData, cam, screenSize)
         end
