@@ -1,9 +1,4 @@
---[[
-	WARNING: Heads up! This script has not been verified by ScriptBlox. Use at your own risk!
-]]
-
-
---This was made for xeno compatibility for a more robust script visit the original
+-- LOCAL SCRIPT THAT YOU ARE MOVING DEAD CHECK FROM
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
